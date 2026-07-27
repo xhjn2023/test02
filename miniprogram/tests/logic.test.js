@@ -384,33 +384,40 @@ section('15. settings 非法入参被忽略');
   assert(pushCalls.find(c => c.url.indexOf('meds_bottles') >= 0).data[0].bottle_number === 1, '字段转 snake_case');
   assert(pushCalls.find(c => c.url.indexOf('meds_settings') >= 0).data[0].reminder_time === '08:00', 'settings 字段转 snake_case');
 
-  // 2. pull：云端有较新数据 → cloud 覆盖本地
+  // 2. pull：云端各表都有数据 → 按表合并，云端 diary 进入本地
   pushCalls = [];
+  global.getApp = () => ({
+    globalData: { state: makeState(), syncStatus: 'offline', syncListeners: [] },
+    _setSyncStatus: function (s) { this.globalData.syncStatus = s; }
+  });
   cloudRows = {
     bottles: [{ user_id: 'default', id: 99, bottle_number: 1, total_pills: 30, remaining_pills: 5, start_date: '2026-01-01', is_active: true, created_at: '2026-06-05T00:00:00Z', updated_at: '2026-06-05T00:00:00Z' }],
     checkins: [],
     settings: [{ user_id: 'default', reminder_time: '09:30', notification_enabled: true, low_threshold: 5, pills_per_day: 2, updated_at: '2026-06-05T00:00:00Z' }],
     diary: [{ user_id: 'default', id: 7, date: '2026-06-04', content: '云端日记', mood: 'good', tags: ['x'], created_at: '2026-06-04T00:00:00Z', updated_at: '2026-06-05T00:00:00Z' }]
   };
-  // 让本地同步时间戳早于云端，确保走 cloud 分支
-  storage.writeSyncMeta({ updatedAt: '2026-01-01T00:00:00Z' });
   const pullRes = await supabase.pullFromCloud();
   assert(pullRes.ok, '拉取成功');
-  assert(pullRes.source === 'cloud', '云端较新 → cloud');
-  assert(pullRes.state.meds.bottles[0].id === 99, '云端 bottle 覆盖本地');
-  assert(pullRes.state.meds.bottles[0].bottleNumber === 1, 'snake_case 还原为 camelCase');
-  assert(pullRes.state.meds.settings.pillsPerDay === 2, '云端 settings 覆盖本地');
+  assert(pullRes.source === 'merged', '按表合并 → merged');
+  assert(pullRes.state.diary.entries[0].content === '云端日记', '云端 diary 合并到本地');
+  assert(pullRes.state.meds.settings.pillsPerDay === 2, '云端 settings 合并');
   assert(pullRes.state.meds.settings.reminderTime === '09:30', 'reminderTime 还原');
-  assert(pullRes.state.diary.entries[0].content === '云端日记', '云端 diary 覆盖本地');
-  assert(pushCalls.length === 0, '云端较新时不触发 push');
+  assert(pushCalls.length === 0, '云端各表都有数据时不触发补推');
 
-  // 3. pull：云端无数据 → 推本地
+  // 3. pull：云端 diary 空，本地有 diary → 保留本地 diary + 补推到云端
   pushCalls = [];
+  const localState3 = makeState();
+  localState3.diary.entries.push({ id: 42, date: '2026-07-27', content: '本地日记', mood: 'good', tags: [], createdAt: '2026-07-27T00:00:00Z', updatedAt: '2026-07-27T00:00:00Z' });
+  global.getApp = () => ({
+    globalData: { state: localState3, syncStatus: 'offline', syncListeners: [] },
+    _setSyncStatus: function (s) { this.globalData.syncStatus = s; }
+  });
   cloudRows = { bottles: [], checkins: [], settings: [], diary: [] };
-  storage.writeSyncMeta({ updatedAt: '2026-01-01T00:00:00Z' }); // 让本地时间戳更早也无妨，云端无数据直接推
   const pullRes2 = await supabase.pullFromCloud();
-  assert(pullRes2.ok, '云端无记录 → 推本地成功');
-  assert(pushCalls.length >= 2, '推本地触发多表 push');
+  assert(pullRes2.ok, '拉取成功');
+  assert(pullRes2.source === 'merged', '合并 → merged');
+  assert(pullRes2.state.diary.entries.some(e => e.content === '本地日记'), '本地 diary 保留（不被云端空覆盖）');
+  assert(pushCalls.some(c => c.url.indexOf('diary_entries') >= 0), '本地 diary 补推到云端');
 
   // 4. 转换器：往返一致性
   const orig = makeState();

@@ -223,6 +223,22 @@ async function pushToCloud(state) {
 }
 
 // === 拉取 ===
+// 按表合并：云端某表空时保留本地该表数据，避免整体覆盖导致本地数据丢失
+function _mergeTable(cloudRows, localRows) {
+  if (!cloudRows || !cloudRows.length) return localRows || [];
+  if (!localRows || !localRows.length) return cloudRows;
+  // 都有数据：按主键合并，冲突时取 updated_at 较大者
+  const byKey = new Map();
+  const keyOf = (r) => r.user_id + '|' + (r.date != null ? r.date : r.id);
+  localRows.forEach(r => byKey.set(keyOf(r), r));
+  cloudRows.forEach(r => {
+    const k = keyOf(r);
+    const exist = byKey.get(k);
+    if (!exist || _rowTs(r) > _rowTs(exist)) byKey.set(k, r);
+  });
+  return Array.from(byKey.values());
+}
+
 async function pullFromCloud() {
   if (!syncEnabled) return { ok: false, reason: 'disabled' };
   const app = typeof getApp === 'function' ? getApp() : null;
@@ -235,36 +251,33 @@ async function pullFromCloud() {
       _fetchTable(TABLES.diary)
     ]);
 
-    const rows = { bottles, checkins, settings, diary };
-
-    // 云端最新时间戳（取 4 张表中最大 updated_at）
-    const cloudTs = Math.max(
-      ...bottles.map(_rowTs),
-      ...checkins.map(_rowTs),
-      ...settings.map(_rowTs),
-      ...diary.map(_rowTs),
-      0
-    );
-
     const localState = (app && app.globalData && app.globalData.state) || storage.loadData();
-    const localMeta = storage.readSyncMeta();
-    const localTs = localMeta.updatedAt ? new Date(localMeta.updatedAt).getTime() : 0;
+    const localRows = _stateToRows(localState);
 
-    const hasCloudData = bottles.length || checkins.length || settings.length || diary.length;
+    // 按表合并：云端空则保留本地，都有时按主键合并 + 时间戳取新
+    const merged = {
+      bottles: _mergeTable(bottles, localRows.bottles),
+      checkins: _mergeTable(checkins, localRows.checkins),
+      settings: settings.length ? settings : localRows.settings,
+      diary: _mergeTable(diary, localRows.diary)
+    };
 
-    if (hasCloudData && cloudTs > localTs) {
-      // 云端较新：覆盖本地
-      const cloudState = _rowsToState(rows);
-      if (app && app.globalData) app.globalData.state = cloudState;
-      storage.saveData(cloudState);
-      storage.writeSyncMeta({ updatedAt: new Date(cloudTs).toISOString() });
-      if (app && app._setSyncStatus) app._setSyncStatus('synced');
-      return { ok: true, source: 'cloud', state: cloudState };
+    const mergedState = _rowsToState(merged);
+    if (app && app.globalData) app.globalData.state = mergedState;
+    storage.saveData(mergedState);
+    storage.writeSyncMeta({ updatedAt: new Date().toISOString() });
+
+    // 若本地有云端没有的数据，把合并后的 state 推上去补齐云端
+    const hasLocalOnlyData =
+      (!bottles.length && localRows.bottles.length) ||
+      (!checkins.length && localRows.checkins.length) ||
+      (!diary.length && localRows.diary.length);
+    if (hasLocalOnlyData) {
+      await pushToCloud(mergedState);
     }
 
-    // 本地较新或云端无数据：推送本地
-    await pushToCloud(localState);
-    return { ok: true, source: 'local' };
+    if (app && app._setSyncStatus) app._setSyncStatus('synced');
+    return { ok: true, source: 'merged', state: mergedState };
   } catch (e) {
     console.warn('[sync] pull fail', e && e.message);
     if (app && app._setSyncStatus) app._setSyncStatus('offline');
