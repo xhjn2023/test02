@@ -86,20 +86,35 @@ Page({
       todayLabel: `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${weekDays[d.getDay()]}`
     });
 
-    // 监听同步状态
+    // 监听同步状态：pullFromCloud 完成后会触发，刷新视图
     this._unsubSync = this._app.onSyncChange((status) => {
       this._applySyncStatus(status);
+      if (status === 'synced') {
+        this.refreshMedsView();
+        if (this.data.currentModule === 'diary') this.refreshDiaryView();
+      }
     });
 
-    // 首次进入建第一瓶药
-    const state = this._app.getState();
-    if (!state.meds.bottles.length) {
-      const r = logic.newBottle(state, todayStr, {});
-      this._app.globalData.state = r.state;
-      this._app.saveData();
-    }
+    // 首次进入建第一瓶药（仅在云端拉取完成后；未就绪则等 onShow 时再判断）
+    this._ensureFirstBottle(todayStr);
     this.refreshMedsView();
     this.refreshDiaryView();
+  },
+
+  // 确保至少有一瓶药：仅在 ready 后执行，避免覆盖云端已有数据
+  _ensureFirstBottle(todayStr) {
+    const app = this._app;
+    if (!app || !app.globalData) return;
+    const state = app.getState();
+    if (state.meds.bottles.length) return;
+    if (!app.globalData.ready) {
+      // 还没拉取完，稍后重试
+      setTimeout(() => this._ensureFirstBottle(todayStr), 500);
+      return;
+    }
+    const r = logic.newBottle(state, todayStr, {});
+    app.globalData.state = r.state;
+    app.saveData();
   },
 
   onReady() {

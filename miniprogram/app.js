@@ -6,19 +6,29 @@ App({
   globalData: {
     state: null,        // 全局状态（meds + diary）
     syncStatus: 'offline', // offline | syncing | synced
-    syncListeners: []   // 同步状态变化监听器
+    syncListeners: [],
+    ready: false        // 云端拉取完成前为 false，期间禁止 saveData 推送
   },
 
   onLaunch() {
-    // 直接从云端拉取，不再读本地缓存
+    // 初始为默认空数据，等云端拉取完成后再标记 ready
     this.globalData.state = logic.clone(logic.DEFAULT_DATA);
     supabase.pullFromCloud().then(() => {
+      this.globalData.ready = true;
+      this._notifySync();
+    }).catch(() => {
+      // 拉取失败也允许后续保存（避免无网络时完全不可用）
+      this.globalData.ready = true;
       this._notifySync();
     });
   },
 
-  // 保存数据（直接推云，不再写本地）
+  // 保存数据（直接推云）。ready 之前丢弃，避免空 state 覆盖云端
   saveData() {
+    if (!this.globalData.ready) {
+      console.warn('[app] saveData 被丢弃：云端尚未拉取完成');
+      return Promise.resolve({ ok: false, reason: 'not-ready' });
+    }
     return supabase.pushToCloud(this.globalData.state);
   },
 
