@@ -1,0 +1,10 @@
+/* pages/review/review.wxss */
+.text-teal { color: #0d9488; }
+.diary-preview { color: #475569; line-height: 1.5; word-break: break-word; }
+.del-btn {
+  width: 64rpx; height: 64rpx;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28rpx; color: #cbd5e1;
+  flex-shrink: 0;
+}
+.del-btn:active { color: #ef4444; }

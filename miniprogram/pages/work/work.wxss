@@ -1,0 +1,9 @@
+/* pages/work/work.wxss */
+.line-through { text-decoration: line-through; }
+.del-btn {
+  width: 64rpx; height: 64rpx;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28rpx; color: #cbd5e1;
+  flex-shrink: 0;
+}
+.del-btn:active { color: #ef4444; }

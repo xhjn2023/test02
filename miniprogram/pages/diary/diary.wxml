@@ -1,0 +1,150 @@
+<!-- pages/diary/diary.wxml -->
+<view class="page-wrap">
+
+  <!-- 顶部 -->
+  <view class="page-header">
+    <view class="page-header-inner">
+      <view>
+        <view class="page-title">📖 每日日记</view>
+        <view class="page-sub">{{diaryDateTitle}}</view>
+      </view>
+      <view class="tag">✎ {{wcNum}} 字</view>
+    </view>
+  </view>
+
+  <view class="container">
+
+    <!-- 日期选择：日历视图 + 跳转今日 + picker 快速选择 -->
+    <view class="calendar">
+      <view class="calendar-head">
+        <view class="calendar-nav-btn" bindtap="onPrevMonth">‹</view>
+        <picker mode="date" fields="month" value="{{calendarPickerValue}}" bindchange="onPickerMonthChange">
+          <view class="calendar-title">{{calendarTitle}}</view>
+        </picker>
+        <view class="calendar-nav-btn" bindtap="onNextMonth">›</view>
+      </view>
+      <view class="calendar-week">
+        <view class="calendar-week-cell">日</view>
+        <view class="calendar-week-cell">一</view>
+        <view class="calendar-week-cell">二</view>
+        <view class="calendar-week-cell">三</view>
+        <view class="calendar-week-cell">四</view>
+        <view class="calendar-week-cell">五</view>
+        <view class="calendar-week-cell">六</view>
+      </view>
+      <view class="calendar-grid">
+        <view wx:for="{{calendarCells}}" wx:key="key"
+          class="calendar-cell {{item.classes}}"
+          data-date="{{item.date}}"
+          bindtap="onCalendarCellTap">
+          <text>{{item.day}}</text>
+        </view>
+      </view>
+      <view class="row gap-3 mt">
+        <picker mode="date" value="{{selectedDate}}" end="{{todayStr}}" bindchange="onPickerDateChange">
+          <view class="btn-ghost">📅 选日期</view>
+        </picker>
+        <view class="btn-ghost flex-1" bindtap="onJumpToday">回到今日</view>
+      </view>
+    </view>
+
+    <!-- 编辑卡 -->
+    <view class="card">
+      <view class="row-between mb">
+        <view>
+          <view class="text-xs text-mint-soft">当前编辑</view>
+          <view class="text-xl font-semibold">{{editingDateTitle}}</view>
+        </view>
+        <view wx:if="{{showDiaryDelete}}" class="tag" style="background:#fef3c7;color:#b45309">已存在</view>
+      </view>
+
+      <!-- 心情 -->
+      <view class="row gap-2 mb-half">
+        <text class="text-xs text-muted">心情</text>
+        <view class="mood-row">
+          <view wx:for="{{moods}}" wx:key="key"
+            class="mood-btn {{item.classes}} {{currentMood === item.key ? 'mood-active' : ''}}"
+            data-mood="{{item.key}}" bindtap="onMoodPick">
+            <text>{{item.icon}} {{item.label}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 标签 -->
+      <view class="row gap-2 mb">
+        <text class="text-xs text-muted">标签</text>
+        <view class="tag-row">
+          <view wx:for="{{presetTags}}" wx:key="*this"
+            class="tag-btn {{currentTags[item] ? 'tag-on' : ''}}"
+            data-tag="{{item}}" bindtap="onTagToggle">
+            <text>#{{item}}</text>
+          </view>
+        </view>
+      </view>
+
+      <textarea class="textarea-soft" value="{{diaryContent}}" placeholder="今天发生了什么？记录此刻的想法..."
+        maxlength="-1" auto-height bindinput="onDiaryInput" />
+
+      <view class="row gap-3 mt">
+        <view class="btn-primary flex-1" bindtap="onDiarySave">
+          <text>{{diarySaveBtnText}}</text>
+        </view>
+        <view wx:if="{{showDiaryDelete}}" class="btn-del" bindtap="onDiaryDelete">
+          <text>🗑</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 统计 -->
+    <view class="grid-3">
+      <view class="card-sm stat-box">
+        <view class="stat-num text-mint">{{statTotal}}</view>
+        <view class="text-xs text-muted">总日记</view>
+      </view>
+      <view class="card-sm stat-box">
+        <view class="stat-num text-amber">{{statWords}}</view>
+        <view class="text-xs text-muted">总字数</view>
+      </view>
+      <view class="card-sm stat-box">
+        <view class="stat-num text-purple">{{statStreak}}</view>
+        <view class="text-xs text-muted">连续天数</view>
+      </view>
+    </view>
+
+    <!-- 历史 -->
+    <view class="card">
+      <view class="text-sm font-semibold mb row gap-2">
+        <text class="text-mint">📖</text><text>历史日记</text>
+      </view>
+      <view class="search-row">
+        <text class="search-icon">🔍</text>
+        <input class="search-input" value="{{diarySearch}}" placeholder="搜索日记内容或标签..."
+          bindinput="onDiarySearch" />
+      </view>
+      <scroll-view scroll-y class="diary-scroll">
+        <view wx:if="{{diaryList.length === 0}}" class="empty">
+          {{diarySearch ? '未找到匹配的日记' : '暂无日记，开始记录今天吧'}}
+        </view>
+        <view wx:for="{{diaryList}}" wx:key="date" class="diary-item"
+          data-date="{{item.date}}" bindtap="onDiaryItemClick">
+          <view class="row-between mb-half">
+            <view class="row gap-2">
+              <text class="text-base">{{item.moodIcon}}</text>
+              <text class="text-sm font-semibold">{{item.dateLabel}}</text>
+            </view>
+            <text class="text-xs text-muted">{{item.contentLen}}字</text>
+          </view>
+          <view class="text-xs diary-preview">{{item.preview}}</view>
+          <view wx:if="{{item.tagsHtml.length}}" class="mt-half row gap-2">
+            <view wx:for="{{item.tagsHtml}}" wx:for-item="t" wx:key="*this" class="tag-mini">#{{t}}</view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>
+
+<!-- Toast -->
+<view wx:if="{{toastShow}}" class="toast">
+  <text>{{toastMsg}}</text>
+</view>

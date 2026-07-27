@@ -2,6 +2,8 @@
 const logic = require('./utils/logic.js');
 const supabase = require('./utils/supabase.js');
 
+const STORAGE_KEY = 'workbench_state_cache';
+
 App({
   globalData: {
     state: null,        // 全局状态（meds + diary）
@@ -11,8 +13,18 @@ App({
   },
 
   onLaunch() {
-    // 初始为默认空数据，等云端拉取完成后再标记 ready
-    this.globalData.state = logic.clone(logic.DEFAULT_DATA);
+    // 先从本地缓存恢复，避免 pull 失败（如体验版域名未配/无网络）时显示空白
+    try {
+      const cached = wx.getStorageSync(STORAGE_KEY);
+      if (cached && typeof cached === 'object') {
+        this.globalData.state = logic.reconcile(cached);
+        console.log('[app] 从本地缓存恢复 state');
+      } else {
+        this.globalData.state = logic.clone(logic.DEFAULT_DATA);
+      }
+    } catch (e) {
+      this.globalData.state = logic.clone(logic.DEFAULT_DATA);
+    }
     supabase.pullFromCloud().then(() => {
       this.globalData.ready = true;
       this._notifySync();
@@ -29,7 +41,17 @@ App({
       console.warn('[app] saveData 被丢弃：云端尚未拉取完成');
       return Promise.resolve({ ok: false, reason: 'not-ready' });
     }
+    this._saveCache();
     return supabase.pushToCloud(this.globalData.state);
+  },
+
+  // 写入本地缓存（离线回退用，云端为主）
+  _saveCache() {
+    try {
+      wx.setStorageSync(STORAGE_KEY, this.globalData.state);
+    } catch (e) {
+      console.warn('[app] 写入本地缓存失败:', e);
+    }
   },
 
   // 获取最新状态（页面 onShow 时调用，确保拿到云端同步后的最新数据）

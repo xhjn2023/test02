@@ -1,6 +1,12 @@
 {
   "pages": [
-    "pages/index/index"
+    "pages/home/home",
+    "pages/meds/meds",
+    "pages/diary/diary",
+    "pages/work/work",
+    "pages/study/study",
+    "pages/life/life",
+    "pages/review/review"
   ],
   "window": {
     "backgroundTextStyle": "light",

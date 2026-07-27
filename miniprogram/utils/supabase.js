@@ -1,11 +1,15 @@
 // utils/supabase.js
 // Supabase REST API 封装（多表存数据）
 //
-// 数据按业务拆分到 4 张表（PostgreSQL snake_case 字段）：
-//   meds_bottles   主键 (user_id, id)            药瓶
-//   meds_checkins  主键 (user_id, date)          打卡记录
-//   meds_settings  主键 (user_id)                吃药设置（单行 per user）
-//   diary_entries  主键 (user_id, date)          日记条目
+// 数据按业务拆分到 8 张表（PostgreSQL snake_case 字段）：
+//   meds_bottles      主键 (user_id, id)            药瓶
+//   meds_checkins     主键 (user_id, date)          打卡记录
+//   meds_settings     主键 (user_id)                吃药设置（单行 per user）
+//   diary_entries     主键 (user_id, date)          日记条目
+//   work_tasks        主键 (user_id, id)            工作任务
+//   study_plans       主键 (user_id, id)            学习计划
+//   life_moments      主键 (user_id, id)            生活记录
+//   review_entries    主键 (user_id, id)            复盘记录
 //
 // REST 端点：
 //   GET  {URL}/rest/v1/{table}?user_id=eq.{uid}
@@ -28,7 +32,11 @@ const TABLES = {
   bottles: 'meds_bottles',
   checkins: 'meds_checkins',
   settings: 'meds_settings',
-  diary: 'diary_entries'
+  diary: 'diary_entries',
+  work: 'work_tasks',
+  study: 'study_plans',
+  life: 'life_moments',
+  review: 'review_entries'
 };
 
 let syncEnabled = !!SUPABASE_ANON_KEY;
@@ -48,8 +56,15 @@ function _http(options) {
       data: options.data,
       header: options.header,
       timeout: options.timeout || 10000,
-      success: (res) => resolve(res),
-      fail: (err) => reject(err)
+      success: (res) => {
+        // 详细日志，便于体验版 vConsole 排查
+        console.log('[supabase]', options.method, options.url, '->', res.statusCode);
+        resolve(res);
+      },
+      fail: (err) => {
+        console.error('[supabase] 请求失败:', options.method, options.url, err);
+        reject(new Error('wx.request fail: ' + (err && err.errMsg ? err.errMsg : 'unknown')));
+      }
     });
   });
 }
@@ -69,6 +84,10 @@ function _stateToRows(state) {
   const s = state || {};
   const meds = s.meds || {};
   const diary = s.diary || {};
+  const work = s.work || {};
+  const study = s.study || {};
+  const life = s.life || {};
+  const review = s.review || {};
   return {
     bottles: (meds.bottles || []).map(b => ({
       user_id: uid,
@@ -106,6 +125,49 @@ function _stateToRows(state) {
       tags: Array.isArray(e.tags) ? e.tags : [],
       created_at: e.createdAt || now,
       updated_at: e.updatedAt || now
+    })),
+    work: (work.tasks || []).map(t => ({
+      user_id: uid,
+      id: t.id,
+      title: t.title,
+      done: !!t.done,
+      priority: t.priority,
+      due_date: t.dueDate,
+      created_at: t.createdAt || now,
+      updated_at: t.updatedAt || now
+    })),
+    study: (study.plans || []).map(p => ({
+      user_id: uid,
+      id: p.id,
+      subject: p.subject,
+      content: p.content,
+      duration_min: p.durationMin,
+      completed: !!p.completed,
+      date: p.date,
+      created_at: p.createdAt || now,
+      updated_at: p.updatedAt || now
+    })),
+    life: (life.moments || []).map(m => ({
+      user_id: uid,
+      id: m.id,
+      content: m.content,
+      mood: m.mood,
+      tags: Array.isArray(m.tags) ? m.tags : [],
+      date: m.date,
+      created_at: m.createdAt || now,
+      updated_at: m.updatedAt || now
+    })),
+    review: (review.entries || []).map(r => ({
+      user_id: uid,
+      id: r.id,
+      period_type: r.periodType,
+      period_start: r.periodStart,
+      period_end: r.periodEnd,
+      content: r.content,
+      rating: r.rating,
+      tags: Array.isArray(r.tags) ? r.tags : [],
+      created_at: r.createdAt || now,
+      updated_at: r.updatedAt || now
     }))
   };
 }
@@ -147,6 +209,53 @@ function _rowsToState(rows) {
         createdAt: r.created_at,
         updatedAt: r.updated_at
       })).sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0))
+    },
+    work: {
+      tasks: (rows.work || []).map(r => ({
+        id: r.id,
+        title: r.title,
+        done: !!r.done,
+        priority: r.priority,
+        dueDate: r.due_date,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })).sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0))
+    },
+    study: {
+      plans: (rows.study || []).map(r => ({
+        id: r.id,
+        subject: r.subject,
+        content: r.content,
+        durationMin: r.duration_min,
+        completed: !!r.completed,
+        date: r.date,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })).sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0))
+    },
+    life: {
+      moments: (rows.life || []).map(r => ({
+        id: r.id,
+        content: r.content,
+        mood: r.mood,
+        tags: Array.isArray(r.tags) ? r.tags : [],
+        date: r.date,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })).sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0))
+    },
+    review: {
+      entries: (rows.review || []).map(r => ({
+        id: r.id,
+        periodType: r.period_type,
+        periodStart: r.period_start,
+        periodEnd: r.period_end,
+        content: r.content,
+        rating: r.rating,
+        tags: Array.isArray(r.tags) ? r.tags : [],
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })).sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0))
     }
   });
 }
@@ -191,15 +300,31 @@ async function pushToCloud(state) {
   if (app && app._setSyncStatus) app._setSyncStatus('syncing');
   try {
     const rows = _stateToRows(state);
-    // 并发推送 4 张表
-    const results = await Promise.all([
+    // 并发推送 8 张表（空数组不发请求）。用 allSettled 容错：
+    // 单表失败（如表不存在/权限）不阻断其他表，避免整体失败导致用户以为没保存
+    const settled = await Promise.allSettled([
       _upsertTable(TABLES.bottles, rows.bottles),
       _upsertTable(TABLES.checkins, rows.checkins),
       _upsertTable(TABLES.settings, rows.settings),
-      _upsertTable(TABLES.diary, rows.diary)
+      _upsertTable(TABLES.diary, rows.diary),
+      _upsertTable(TABLES.work, rows.work),
+      _upsertTable(TABLES.study, rows.study),
+      _upsertTable(TABLES.life, rows.life),
+      _upsertTable(TABLES.review, rows.review)
     ]);
+    const failures = settled.filter(r => r.status === 'rejected');
+    const okCount = settled.length - failures.length;
+    if (failures.length) {
+      console.warn('[sync] push 部分失败:', failures.length + '/' + settled.length,
+        failures.map(f => f.reason && f.reason.message).join('|'));
+    }
+    // 只要有一张表写成功就认为部分成功，避免完全失败时让用户重试覆盖数据
+    if (okCount === 0) {
+      if (app && app._setSyncStatus) app._setSyncStatus('offline');
+      return { ok: false, reason: 'all-failed', errors: failures.map(f => f.reason) };
+    }
     if (app && app._setSyncStatus) app._setSyncStatus('synced');
-    return { ok: true, pushed: results };
+    return { ok: true, partial: failures.length > 0, pushed: settled };
   } catch (e) {
     console.warn('[sync] push fail', e && e.message);
     if (app && app._setSyncStatus) app._setSyncStatus('offline');
@@ -229,12 +354,42 @@ async function pullFromCloud() {
   const app = typeof getApp === 'function' ? getApp() : null;
   if (app && app._setSyncStatus) app._setSyncStatus('syncing');
   try {
-    const [bottles, checkins, settings, diary] = await Promise.all([
+    // 用 allSettled 容错：单表失败（如表不存在/网络）不阻断其他表
+    // 否则 8 张表中任意一张 404 会让整个 Promise.all reject，导致 state 保持空默认值，
+    // 用户重启小程序后看不到任何已保存数据
+    const settled = await Promise.allSettled([
       _fetchTable(TABLES.bottles),
       _fetchTable(TABLES.checkins),
       _fetchTable(TABLES.settings),
-      _fetchTable(TABLES.diary)
+      _fetchTable(TABLES.diary),
+      _fetchTable(TABLES.work),
+      _fetchTable(TABLES.study),
+      _fetchTable(TABLES.life),
+      _fetchTable(TABLES.review)
     ]);
+    const bottles  = settled[0].status === 'fulfilled' ? settled[0].value : [];
+    const checkins = settled[1].status === 'fulfilled' ? settled[1].value : [];
+    const settings = settled[2].status === 'fulfilled' ? settled[2].value : [];
+    const diary    = settled[3].status === 'fulfilled' ? settled[3].value : [];
+    const work     = settled[4].status === 'fulfilled' ? settled[4].value : [];
+    const study    = settled[5].status === 'fulfilled' ? settled[5].value : [];
+    const life     = settled[6].status === 'fulfilled' ? settled[6].value : [];
+    const review   = settled[7].status === 'fulfilled' ? settled[7].value : [];
+
+    const failures = settled.filter(r => r.status === 'rejected');
+    if (failures.length) {
+      console.warn('[sync] pull 部分失败:', failures.length + '/' + settled.length,
+        failures.map(f => f.reason && f.reason.message).join('|'));
+    }
+
+    // 关键：如果所有表都失败（如合法域名没配/无网络），不覆盖本地 state，
+    // 返回 ok:false 让上层知道拉取失败。否则会用空数据覆盖本地，用户看不到任何已保存数据
+    const okCount = settled.length - failures.length;
+    if (okCount === 0) {
+      console.error('[sync] pull 全部失败，保留本地 state 不覆盖');
+      if (app && app._setSyncStatus) app._setSyncStatus('offline');
+      return { ok: false, reason: 'all-failed', errors: failures.map(f => f.reason) };
+    }
 
     // 本地 state 直接取内存中的（app.globalData.state），不再读 storage
     const localState = (app && app.globalData && app.globalData.state) || logic.clone(logic.DEFAULT_DATA);
@@ -245,23 +400,33 @@ async function pullFromCloud() {
       bottles: _mergeTable(bottles, localRows.bottles),
       checkins: _mergeTable(checkins, localRows.checkins),
       settings: settings.length ? settings : localRows.settings,
-      diary: _mergeTable(diary, localRows.diary)
+      diary: _mergeTable(diary, localRows.diary),
+      work: _mergeTable(work, localRows.work),
+      study: _mergeTable(study, localRows.study),
+      life: _mergeTable(life, localRows.life),
+      review: _mergeTable(review, localRows.review)
     };
 
     const mergedState = _rowsToState(merged);
     if (app && app.globalData) app.globalData.state = mergedState;
+    // 写入本地缓存，pull 失败时（如下次启动无网络）可从缓存恢复
+    if (app && app._saveCache) app._saveCache();
 
     // 若本地有云端没有的数据，把合并后的 state 推上去补齐云端
     const hasLocalOnlyData =
       (!bottles.length && localRows.bottles.length) ||
       (!checkins.length && localRows.checkins.length) ||
-      (!diary.length && localRows.diary.length);
+      (!diary.length && localRows.diary.length) ||
+      (!work.length && localRows.work.length) ||
+      (!study.length && localRows.study.length) ||
+      (!life.length && localRows.life.length) ||
+      (!review.length && localRows.review.length);
     if (hasLocalOnlyData) {
       await pushToCloud(mergedState);
     }
 
     if (app && app._setSyncStatus) app._setSyncStatus('synced');
-    return { ok: true, source: 'merged', state: mergedState };
+    return { ok: true, source: 'merged', state: mergedState, partial: failures.length > 0 };
   } catch (e) {
     console.warn('[sync] pull fail', e && e.message);
     if (app && app._setSyncStatus) app._setSyncStatus('offline');

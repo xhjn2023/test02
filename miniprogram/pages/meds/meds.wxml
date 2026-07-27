@@ -1,0 +1,172 @@
+<!-- pages/meds/meds.wxml -->
+<view class="page-wrap">
+
+  <!-- 顶部 -->
+  <view class="page-header">
+    <view class="page-header-inner">
+      <view>
+        <view class="page-title">💊 吃药提醒</view>
+        <view class="page-sub">{{todayLabel}}</view>
+      </view>
+      <view class="tag">🔥 连续 {{streakNum}} 天</view>
+    </view>
+  </view>
+
+  <!-- 内容区 -->
+  <view class="container">
+
+    <!-- 今日打卡主卡 -->
+    <view class="card">
+      <view class="row-between mb">
+        <view>
+          <view class="text-xs text-mint-soft">今日服药</view>
+          <view class="text-xl font-semibold">{{checkinTitle}}</view>
+        </view>
+      </view>
+
+      <!-- 环形进度 -->
+      <view class="ring-row">
+        <view class="ring-wrap">
+          <canvas type="2d" id="ringCanvas" class="ring-canvas"></canvas>
+          <view class="ring-inner">
+            <view class="ring-pct">{{ringPct}}%</view>
+            <view class="ring-label">剩余比例</view>
+          </view>
+        </view>
+        <view class="ring-right">
+          <view class="big-num">
+            <text class="text-2xl font-bold">{{remainPills}}</text>
+            <text class="text-sm text-muted"> / {{totalPills}} 颗</text>
+          </view>
+          <view class="text-xs text-muted">第 <text class="text-mint font-bold">{{bottleNo}}</text> 瓶 · 预计 {{estFinish}} 吃完</view>
+        </view>
+      </view>
+
+      <view class="btn-primary {{todayChecked ? 'btn-done' : ''}}" bindtap="onCheckin">
+        <text>{{checkinBtnText}}</text>
+      </view>
+    </view>
+
+    <!-- 低药量提醒 -->
+    <view class="alert-low" wx:if="{{showLowAlert}}">
+      <view class="alert-icon">⚠️</view>
+      <view class="flex-1">
+        <view class="text-sm font-semibold alert-title">药量不足提醒</view>
+        <view class="text-xs alert-sub">{{lowAlertText}}</view>
+      </view>
+    </view>
+
+    <!-- 快捷操作 -->
+    <view class="grid-2">
+      <view class="card-sm quick-btn" bindtap="onNewBottle">
+        <view class="quick-icon mint">＋</view>
+        <text class="text-sm">开新瓶</text>
+      </view>
+      <view class="card-sm quick-btn" bindtap="onEditPills">
+        <view class="quick-icon amber">✎</view>
+        <text class="text-sm">修改余量</text>
+      </view>
+    </view>
+
+    <!-- 设置卡 -->
+    <view class="card">
+      <view class="text-sm font-semibold mb row gap-2">
+        <text class="text-mint">⚙</text><text>提醒设置</text>
+      </view>
+      <view class="setting-row">
+        <text class="text-sm">每日提醒时间</text>
+        <picker mode="time" value="{{settings.reminderTime}}" bindchange="onReminderTimeChange">
+          <view class="input-soft time-picker">{{settings.reminderTime}}</view>
+        </picker>
+      </view>
+      <view class="setting-row">
+        <text class="text-sm">每日服药颗数</text>
+        <input class="input-soft num-input" type="number" value="{{settings.pillsPerDay}}"
+          data-key="pillsPerDay" bindblur="onSettingNumChange" />
+      </view>
+      <view class="setting-row">
+        <text class="text-sm">低药量阈值（颗）</text>
+        <input class="input-soft num-input" type="number" value="{{settings.lowThreshold}}"
+          data-key="lowThreshold" bindblur="onSettingNumChange" />
+      </view>
+      <view class="setting-row">
+        <text class="text-sm">开启页内提醒</text>
+        <view class="switch {{settings.notificationEnabled ? 'switch-on' : ''}}" bindtap="onNotifySwitch">
+          <view class="switch-dot"></view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 历史记录 -->
+    <view class="card">
+      <view class="row-between mb">
+        <view class="text-sm font-semibold row gap-2">
+          <text class="text-mint">🕘</text><text>服药历史</text>
+        </view>
+        <view class="seg">
+          <view class="seg-btn {{historyTab === 'checkins' ? 'seg-active' : ''}}"
+            data-tab="checkins" bindtap="onTabHistory">打卡</view>
+          <view class="seg-btn {{historyTab === 'bottles' ? 'seg-active' : ''}}"
+            data-tab="bottles" bindtap="onTabHistory">瓶次</view>
+        </view>
+      </view>
+
+      <scroll-view scroll-y class="history-scroll" wx:if="{{historyTab === 'checkins'}}">
+        <view wx:if="{{checkinHistory.length === 0}}" class="empty">暂无打卡记录</view>
+        <view wx:for="{{checkinHistory}}" wx:key="date" class="history-item">
+          <view class="ci-dot {{item.taken ? 'ci-on' : 'ci-off'}}">{{item.taken ? '✓' : '✕'}}</view>
+          <view class="flex-1">
+            <view class="text-sm">{{item.date}}</view>
+            <view class="text-xs text-muted">{{item.bottleLabel}} · {{item.taken ? '已服药' : '未服药'}}</view>
+          </view>
+          <text class="text-xs text-muted">{{item.timeStr}}</text>
+        </view>
+      </scroll-view>
+
+      <scroll-view scroll-y class="history-scroll" wx:if="{{historyTab === 'bottles'}}">
+        <view wx:if="{{bottleHistory.length === 0}}" class="empty">暂无瓶次记录</view>
+        <view wx:for="{{bottleHistory}}" wx:key="id" class="bottle-item">
+          <view class="row-between mb-half">
+            <view class="text-sm">第 {{item.bottleNumber}} 瓶
+              <text wx:if="{{item.isActive}}" class="text-mint"> · 使用中</text>
+              <text wx:else class="text-muted"> · 已用完</text>
+            </view>
+            <text class="text-xs text-muted">{{item.remainingPills}}/{{item.totalPills}}颗</text>
+          </view>
+          <view class="bar-track">
+            <view class="bar-fill" style="width: {{item.pct}}%"></view>
+          </view>
+          <view class="text-xs text-muted mt-half">起用 {{item.startDate}} · 已服 {{item.consumed}} 颗</view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+</view>
+
+<!-- 修改余量弹层 -->
+<view wx:if="{{sheetShow}}" class="sheet-mask" bindtap="onSheetMask">
+  <view class="sheet-box" catchtap="noop">
+    <view class="sheet-handle"></view>
+    <view class="text-lg font-semibold mb">{{sheetTitle}}</view>
+    <view class="sheet-field">
+      <text class="text-xs text-muted">当前瓶号</text>
+      <input class="input-soft" type="number" value="{{sheetBottleNo}}"
+        bindinput="onSheetInput" data-key="bottleNo" />
+    </view>
+    <view class="sheet-field">
+      <text class="text-xs text-muted">剩余药片数（颗）</text>
+      <input class="input-soft" type="number" value="{{sheetPills}}"
+        bindinput="onSheetInput" data-key="pills" />
+      <view wx:if="{{sheetErr}}" class="text-xs err-text">{{sheetErr}}</view>
+    </view>
+    <view class="row gap-3 mt">
+      <view class="btn-ghost flex-1" bindtap="onSheetCancel">取消</view>
+      <view class="btn-primary flex-1" bindtap="onSheetSave">保存</view>
+    </view>
+  </view>
+</view>
+
+<!-- Toast -->
+<view wx:if="{{toastShow}}" class="toast">
+  <text>{{toastMsg}}</text>
+</view>

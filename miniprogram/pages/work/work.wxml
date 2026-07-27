@@ -1,0 +1,81 @@
+<!-- pages/work/work.wxml -->
+<view class="page-wrap">
+
+  <view class="page-header">
+    <view class="page-header-inner">
+      <view>
+        <view class="page-title">💼 工作</view>
+        <view class="page-sub">任务清单 · 优先级</view>
+      </view>
+      <view class="tag">{{stat.pending}} 待办 / {{stat.total}}</view>
+    </view>
+  </view>
+
+  <view class="container">
+    <!-- 新建任务 -->
+    <view class="card">
+      <view class="text-sm font-semibold mb row gap-2">
+        <text class="text-blue">＋</text><text>新建任务</text>
+      </view>
+      <view class="sheet-field">
+        <text class="text-xs text-muted">标题</text>
+        <input class="input-soft" value="{{draft.title}}" placeholder="输入任务标题..."
+          data-key="title" bindinput="onDraftInput" />
+      </view>
+      <view class="row gap-3 mb">
+        <view class="flex-1">
+          <text class="text-xs text-muted">优先级</text>
+          <view class="seg mt-half">
+            <view class="seg-btn {{draft.priority === 1 ? 'seg-active' : ''}}" data-p="1" bindtap="onPriorityPick">高</view>
+            <view class="seg-btn {{draft.priority === 2 ? 'seg-active' : ''}}" data-p="2" bindtap="onPriorityPick">中</view>
+            <view class="seg-btn {{draft.priority === 3 ? 'seg-active' : ''}}" data-p="3" bindtap="onPriorityPick">低</view>
+          </view>
+        </view>
+        <view class="flex-1">
+          <text class="text-xs text-muted">截止日期</text>
+          <picker mode="date" value="{{draft.dueDate}}" bindchange="onDueDateChange">
+            <view class="input-soft mt-half time-picker">{{draft.dueDate || '选日期'}}</view>
+          </picker>
+        </view>
+      </view>
+      <view wx:if="{{draftErr}}" class="text-xs err-text mb">{{draftErr}}</view>
+      <view class="btn-primary" bindtap="onAddTask"><text>添加任务</text></view>
+    </view>
+
+    <!-- 任务列表 -->
+    <view class="card">
+      <view class="row-between mb">
+        <view class="text-sm font-semibold row gap-2">
+          <text class="text-blue">📋</text><text>任务列表</text>
+        </view>
+        <view class="seg">
+          <view class="seg-btn {{filter === 'all' ? 'seg-active' : ''}}" data-f="all" bindtap="onFilter">全部</view>
+          <view class="seg-btn {{filter === 'pending' ? 'seg-active' : ''}}" data-f="pending" bindtap="onFilter">待办</view>
+          <view class="seg-btn {{filter === 'done' ? 'seg-active' : ''}}" data-f="done" bindtap="onFilter">已完成</view>
+        </view>
+      </view>
+      <view wx:if="{{!list.length}}" class="empty-state">
+        <text class="empty-icon">📝</text>
+        <text>暂无任务，先添加一条吧</text>
+      </view>
+      <view wx:for="{{list}}" wx:key="id" class="list-item">
+        <view class="checkbox {{item.done ? 'checked' : ''}}" data-id="{{item.id}}" bindtap="onToggle">
+          <text wx:if="{{item.done}}" class="checkbox-icon">✓</text>
+        </view>
+        <view class="flex-1">
+          <view class="row-between mb-half">
+            <text class="text-sm {{item.done ? 'text-muted line-through' : 'font-semibold'}}">{{item.title}}</text>
+            <text class="prio-tag prio-{{item.priority}}">{{item.priorityLabel}}</text>
+          </view>
+          <view class="text-xs text-muted">
+            <text wx:if="{{item.dueDate}}">截止 {{item.dueDate}} · </text>
+            <text>创建 {{item.createdAtLabel}}</text>
+          </view>
+        </view>
+        <view class="del-btn" data-id="{{item.id}}" bindtap="onDelete">🗑</view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<view wx:if="{{toastShow}}" class="toast"><text>{{toastMsg}}</text></view>
