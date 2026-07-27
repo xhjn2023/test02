@@ -382,6 +382,15 @@ async function pullFromCloud() {
         failures.map(f => f.reason && f.reason.message).join('|'));
     }
 
+    // 关键：如果所有表都失败（如合法域名没配/无网络），不覆盖本地 state，
+    // 返回 ok:false 让上层知道拉取失败。否则会用空数据覆盖本地，用户看不到任何已保存数据
+    const okCount = settled.length - failures.length;
+    if (okCount === 0) {
+      console.error('[sync] pull 全部失败，保留本地 state 不覆盖');
+      if (app && app._setSyncStatus) app._setSyncStatus('offline');
+      return { ok: false, reason: 'all-failed', errors: failures.map(f => f.reason) };
+    }
+
     // 本地 state 直接取内存中的（app.globalData.state），不再读 storage
     const localState = (app && app.globalData && app.globalData.state) || logic.clone(logic.DEFAULT_DATA);
     const localRows = _stateToRows(localState);
@@ -400,6 +409,8 @@ async function pullFromCloud() {
 
     const mergedState = _rowsToState(merged);
     if (app && app.globalData) app.globalData.state = mergedState;
+    // 写入本地缓存，pull 失败时（如下次启动无网络）可从缓存恢复
+    if (app && app._saveCache) app._saveCache();
 
     // 若本地有云端没有的数据，把合并后的 state 推上去补齐云端
     const hasLocalOnlyData =

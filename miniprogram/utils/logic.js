@@ -548,7 +548,9 @@ function addReviewEntry(state, entry) {
   const content = (entry && entry.content || '').trim();
   if (!content) return { state: s, error: '复盘内容不能为空' };
   const periodType = entry.periodType === 'month' ? 'month' : 'week';
-  const rating = Math.max(1, Math.min(5, parseInt(entry.rating, 10) || 3));
+  let rating = parseInt(entry.rating, 10);
+  if (isNaN(rating)) rating = 3;
+  rating = Math.max(1, Math.min(5, rating));
   const it = _addItem(s.review.entries, {
     periodType,
     periodStart: entry.periodStart || '',

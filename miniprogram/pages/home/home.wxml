@@ -1,0 +1,112 @@
+<!-- pages/home/home.wxml -->
+<view class="page-wrap">
+
+  <!-- 顶部标题栏 -->
+  <view class="page-header">
+    <view class="page-header-inner">
+      <view class="header-left">
+        <view class="logo">
+          <text class="logo-icon">★</text>
+        </view>
+        <view>
+          <view class="title">个人工作台</view>
+          <view class="sub">{{todayLabel}}</view>
+        </view>
+      </view>
+      <view class="header-right">
+        <view class="icon-btn {{syncColorClass}}" bindtap="onSyncTap">
+          <text class="sync-icon {{syncSpinning ? 'spin' : ''}}">{{syncIconChar}}</text>
+        </view>
+        <view class="icon-btn" bindtap="onExport">
+          <text class="sync-icon">⬇</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 今日概览 -->
+  <view class="container">
+    <view class="card">
+      <view class="row-between mb">
+        <view class="text-xl font-semibold">今日概览</view>
+        <view class="tag">{{overview.meds.streak}} 天打卡</view>
+      </view>
+      <view class="grid-3">
+        <view class="stat-box">
+          <view class="stat-num text-mint">{{overview.diary.streak}}</view>
+          <view class="text-xs text-muted">日记连续</view>
+        </view>
+        <view class="stat-box">
+          <view class="stat-num text-amber">{{overview.work.pending}}</view>
+          <view class="text-xs text-muted">待办任务</view>
+        </view>
+        <view class="stat-box">
+          <view class="stat-num text-purple">{{overview.review.avgRating || '—'}}</view>
+          <view class="text-xs text-muted">复盘评分</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 模块入口 -->
+    <view class="module-grid">
+      <view class="module-card m-mint" bindtap="goMeds">
+        <view class="module-icon" style="background: linear-gradient(135deg, #86efac, #22c55e);">
+          <text style="color:#fff">💊</text>
+        </view>
+        <view class="module-name">吃药提醒</view>
+        <view class="module-desc">每日打卡 · 余量管理</view>
+        <view class="module-stat text-mint">余 {{overview.meds.remain}} 颗 · 连续 {{overview.meds.streak}} 天</view>
+      </view>
+
+      <view class="module-card m-amber" bindtap="goDiary">
+        <view class="module-icon" style="background: linear-gradient(135deg, #fde68a, #f59e0b);">
+          <text style="color:#fff">📖</text>
+        </view>
+        <view class="module-name">每日日记</view>
+        <view class="module-desc">日期选择 · 心情标签</view>
+        <view class="module-stat text-amber">{{overview.diary.today ? '今日已记' : '今日未记'}} · 共 {{overview.diary.total}} 篇</view>
+      </view>
+
+      <view class="module-card m-blue" bindtap="goWork">
+        <view class="module-icon" style="background: linear-gradient(135deg, #93c5fd, #2563eb);">
+          <text style="color:#fff">💼</text>
+        </view>
+        <view class="module-name">工作</view>
+        <view class="module-desc">任务清单 · 优先级</view>
+        <view class="module-stat text-blue">待办 {{overview.work.pending}} / 共 {{overview.work.total}}</view>
+      </view>
+
+      <view class="module-card m-purple" bindtap="goStudy">
+        <view class="module-icon" style="background: linear-gradient(135deg, #c4b5fd, #7c3aed);">
+          <text style="color:#fff">📚</text>
+        </view>
+        <view class="module-name">学习</view>
+        <view class="module-desc">学习计划 · 时长统计</view>
+        <view class="module-stat text-purple">已学 {{overview.study.done}} / 共 {{overview.study.total}}</view>
+      </view>
+
+      <view class="module-card m-rose" bindtap="goLife">
+        <view class="module-icon" style="background: linear-gradient(135deg, #fda4af, #db2777);">
+          <text style="color:#fff">🌿</text>
+        </view>
+        <view class="module-name">生活</view>
+        <view class="module-desc">生活记录 · 心情时刻</view>
+        <view class="module-stat text-rose">{{overview.life.today ? '今日已记' : '今日未记'}} · 共 {{overview.life.total}} 条</view>
+      </view>
+
+      <view class="module-card m-teal" bindtap="goReview">
+        <view class="module-icon" style="background: linear-gradient(135deg, #5eead4, #0d9488);">
+          <text style="color:#fff">🔍</text>
+        </view>
+        <view class="module-name">复盘</view>
+        <view class="module-desc">周月复盘 · 评分归档</view>
+        <view class="module-stat text-teal">共 {{overview.review.total}} 篇 · 均 {{overview.review.avgRating || '—'}}</view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<!-- Toast -->
+<view wx:if="{{toastShow}}" class="toast">
+  <text>{{toastMsg}}</text>
+</view>
