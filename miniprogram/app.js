@@ -1,5 +1,5 @@
 // app.js - 全局逻辑
-const storage = require('./utils/storage.js');
+const logic = require('./utils/logic.js');
 const supabase = require('./utils/supabase.js');
 
 App({
@@ -10,18 +10,16 @@ App({
   },
 
   onLaunch() {
-    // 1. 同步加载本地数据（保证首屏可用）
-    this.globalData.state = storage.loadData();
-    // 2. 异步拉取云端数据
+    // 直接从云端拉取，不再读本地缓存
+    this.globalData.state = logic.clone(logic.DEFAULT_DATA);
     supabase.pullFromCloud().then(() => {
       this._notifySync();
     });
   },
 
-  // 保存数据（本地 + 防抖推云）
+  // 保存数据（直接推云，不再写本地）
   saveData() {
-    storage.saveData(this.globalData.state);
-    supabase.pushDebounced(this.globalData.state);
+    return supabase.pushToCloud(this.globalData.state);
   },
 
   // 获取最新状态（页面 onShow 时调用，确保拿到云端同步后的最新数据）

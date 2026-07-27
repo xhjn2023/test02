@@ -339,7 +339,6 @@ section('15. settings 非法入参被忽略');
 // 异步测试单独跑，避免 CommonJS 顶层 await
 (async () => {
   section('12-async. Supabase 多表 mock 网络测试（拉取/推送）');
-  storage._resetMem();
 
   // 记录每次 POST 请求（按表分组）
   let pushCalls = [];

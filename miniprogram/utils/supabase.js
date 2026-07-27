@@ -18,7 +18,6 @@
 //   Prefer: return=representation; resolution=merge-duplicates  (upsert)
 
 const logic = require('./logic.js');
-const storage = require('./storage.js');
 
 const SUPABASE_URL = 'https://cszkekdciqgimsvfgons.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_EgAro7H2v76ZHWTbzeN0vA_SToYDLgx';
@@ -186,18 +185,6 @@ function _rowTs(r) {
   return r && r.updated_at ? new Date(r.updated_at).getTime() || 0 : 0;
 }
 
-// === 推送（防抖 800ms） ===
-let _pushTimer = null;
-function pushDebounced(state) {
-  if (!syncEnabled) return Promise.resolve();
-  if (_pushTimer) clearTimeout(_pushTimer);
-  return new Promise((resolve) => {
-    _pushTimer = setTimeout(() => {
-      pushToCloud(state).then(resolve).catch(() => resolve());
-    }, 800);
-  });
-}
-
 async function pushToCloud(state) {
   if (!syncEnabled) return { ok: false, reason: 'disabled' };
   const app = typeof getApp === 'function' ? getApp() : null;
@@ -211,8 +198,6 @@ async function pushToCloud(state) {
       _upsertTable(TABLES.settings, rows.settings),
       _upsertTable(TABLES.diary, rows.diary)
     ]);
-    const now = new Date().toISOString();
-    storage.writeSyncMeta({ updatedAt: now });
     if (app && app._setSyncStatus) app._setSyncStatus('synced');
     return { ok: true, pushed: results };
   } catch (e) {
@@ -251,7 +236,8 @@ async function pullFromCloud() {
       _fetchTable(TABLES.diary)
     ]);
 
-    const localState = (app && app.globalData && app.globalData.state) || storage.loadData();
+    // 本地 state 直接取内存中的（app.globalData.state），不再读 storage
+    const localState = (app && app.globalData && app.globalData.state) || logic.clone(logic.DEFAULT_DATA);
     const localRows = _stateToRows(localState);
 
     // 按表合并：云端空则保留本地，都有时按主键合并 + 时间戳取新
@@ -264,8 +250,6 @@ async function pullFromCloud() {
 
     const mergedState = _rowsToState(merged);
     if (app && app.globalData) app.globalData.state = mergedState;
-    storage.saveData(mergedState);
-    storage.writeSyncMeta({ updatedAt: new Date().toISOString() });
 
     // 若本地有云端没有的数据，把合并后的 state 推上去补齐云端
     const hasLocalOnlyData =
@@ -294,7 +278,6 @@ module.exports = {
   SUPABASE_URL,
   TABLES,
   SYNC_USER_ID,
-  pushDebounced,
   pushToCloud,
   pullFromCloud,
   _stateToRows,
