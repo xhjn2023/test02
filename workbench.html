@@ -13,6 +13,8 @@
 <!-- dayjs 处理日期 -->
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.11/dayjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.11/locale/zh-cn.js"></script>
+<!-- Supabase JS（云端同步） -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 
 <script>
   // Tailwind 配置：与 A 方案保持一致的薄荷清新主题
@@ -74,6 +76,9 @@
       </div>
     </div>
     <div class="flex items-center gap-2">
+      <button id="syncStatus" class="pressable w-10 h-10 rounded-full bg-white shadow-card flex items-center justify-center text-slate-300" title="云端同步">
+        <i class="fa-solid fa-cloud"></i>
+      </button>
       <button id="notifyToggle" class="pressable w-10 h-10 rounded-full bg-white shadow-card flex items-center justify-center text-slate-500" title="通知开关">
         <i class="fa-regular fa-bell"></i>
       </button>
@@ -352,7 +357,7 @@ function loadData() {
   }
 }
 function saveData() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); return true; }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); pushToCloudDebounced(); return true; }
   catch (e) {
     console.error('[工作台] 保存失败', e);
     toast('保存失败：存储空间不足', 'error');
@@ -361,6 +366,127 @@ function saveData() {
 }
 
 let state = loadData();
+
+/* =====================================================================
+ * Supabase 云端同步（本地优先 + 云端同步，单用户匿名）
+ * 说明：本地 localStorage 即时读写保证离线可用；Supabase 整包 JSON 存储，
+ *       按 updated_at（服务器时间）做"后写覆盖"合并，支持多设备同步。
+ * ===================================================================== */
+const SUPABASE_URL = 'https://cszkekdciqgimsvfgons.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY_HERE'; // ← 替换为 Supabase 控制台 Settings→API 的 "anon public" 密钥
+const SYNC_TABLE = 'workbench_state';
+const SYNC_USER_ID = 'default'; // 单用户匿名，所有设备共用同一行
+const SYNC_META_KEY = 'workbenchSyncMeta'; // localStorage 中存 { updatedAt }
+
+let _supabase = null;
+let syncEnabled = false;
+try {
+  if (window.supabase && SUPABASE_ANON_KEY && !SUPABASE_ANON_KEY.startsWith('YOUR_')) {
+    _supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    syncEnabled = true;
+  } else {
+    console.warn('[同步] 未配置 anon key，仅本地模式');
+  }
+} catch (e) { console.warn('[同步] Supabase 初始化失败', e); }
+
+function readSyncMeta() {
+  try { return JSON.parse(localStorage.getItem(SYNC_META_KEY)) || {}; }
+  catch { return {}; }
+}
+function writeSyncMeta(patch) {
+  localStorage.setItem(SYNC_META_KEY, JSON.stringify({ ...readSyncMeta(), ...patch }));
+}
+
+// 云端数据字段补全（与 loadData 一致的兼容逻辑）
+function reconcileData(p) {
+  if (!p) return structuredClone(DEFAULT_DATA);
+  if (!p.meds) p.meds = structuredClone(DEFAULT_DATA.meds);
+  if (!p.meds.bottles) p.meds.bottles = [];
+  if (!p.meds.checkins) p.meds.checkins = [];
+  if (!p.meds.settings) p.meds.settings = DEFAULT_DATA.meds.settings;
+  if (!p.diary) p.diary = { entries: [] };
+  if (!p.diary.entries) p.diary.entries = [];
+  return p;
+}
+
+function setSyncStatus(status) {
+  const el = $('syncStatus'); if (!el) return;
+  const map = {
+    synced:  { icon: 'fa-cloud',              color: 'text-mint-500',  title: '已同步到云端' },
+    syncing: { icon: 'fa-arrows-rotate fa-spin', color: 'text-amber-400', title: '同步中…' },
+    offline: { icon: 'fa-cloud-arrow-down',   color: 'text-slate-300', title: '离线（仅本地）' }
+  };
+  const m = map[status] || map.offline;
+  el.className = `pressable w-10 h-10 rounded-full bg-white shadow-card flex items-center justify-center ${m.color}`;
+  el.title = m.title + (syncEnabled ? '' : '（未配置 anon key）');
+  el.innerHTML = `<i class="fa-solid ${m.icon}"></i>`;
+}
+
+// 云端拉取：按 updated_at 判断新旧，云端较新则覆盖本地并重渲染
+async function pullFromCloud() {
+  if (!syncEnabled) { setSyncStatus('offline'); return; }
+  setSyncStatus('syncing');
+  try {
+    const { data, error } = await _supabase
+      .from(SYNC_TABLE)
+      .select('data, updated_at')
+      .eq('user_id', SYNC_USER_ID)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) { // 云端无记录，把本地推上去
+      await pushToCloud();
+      return;
+    }
+    const cloudTs = new Date(data.updated_at).getTime();
+    const localTs = readSyncMeta().updatedAt ? new Date(readSyncMeta().updatedAt).getTime() : 0;
+    if (cloudTs > localTs) {
+      state = reconcileData(data.data);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      writeSyncMeta({ updatedAt: data.updated_at });
+      renderMeds();
+      if (currentModule === 'diary') renderDiary();
+      setSyncStatus('synced');
+    } else {
+      // 本地较新或相等，推送本地到云端
+      await pushToCloud();
+    }
+  } catch (e) {
+    console.warn('[同步] 拉取失败', e);
+    setSyncStatus('offline');
+  }
+}
+
+// 云端推送（防抖 800ms，避免连续操作打爆接口）
+let _pushTimer = null;
+function pushToCloudDebounced() {
+  if (!syncEnabled) return;
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(pushToCloud, 800);
+}
+async function pushToCloud() {
+  if (!syncEnabled) return;
+  setSyncStatus('syncing');
+  try {
+    // upsert 后取回服务器写入的 updated_at，保证本地与云端时间戳一致
+    const { data: row, error } = await _supabase
+      .from(SYNC_TABLE)
+      .upsert({ user_id: SYNC_USER_ID, data: state })
+      .select('updated_at')
+      .single();
+    if (error) throw error;
+    if (row && row.updated_at) writeSyncMeta({ updatedAt: row.updated_at });
+    setSyncStatus('synced');
+  } catch (e) {
+    console.warn('[同步] 推送失败', e);
+    setSyncStatus('offline');
+  }
+}
+
+// 点击同步图标手动触发一次拉取
+window.addEventListener('DOMContentLoaded', () => {
+  const el = $('syncStatus');
+  if (el) el.addEventListener('click', pullFromCloud);
+});
 
 /* ---------- 工具 ---------- */
 const $ = (id) => document.getElementById(id);
@@ -903,8 +1029,11 @@ renderDiary();
 setInterval(tickReminder, 30000);
 tickReminder();
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { renderMeds(); if (currentModule === 'diary') renderDiary(); }
+  if (!document.hidden) { renderMeds(); if (currentModule === 'diary') renderDiary(); pullFromCloud(); }
 });
+// 启动后异步拉取云端数据（本地已先行渲染，云端较新则覆盖重渲染）
+setSyncStatus(syncEnabled ? 'syncing' : 'offline');
+pullFromCloud();
 </script>
 </body>
 </html>
