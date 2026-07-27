@@ -338,11 +338,22 @@ section('15. settings 非法入参被忽略');
 /* =========================================================== */
 // 异步测试单独跑，避免 CommonJS 顶层 await
 (async () => {
-  section('12-async. Supabase mock 网络测试（拉取/推送）');
+  section('12-async. Supabase 多表 mock 网络测试（拉取/推送）');
   storage._resetMem();
-  let lastPushBody = null;
-  let lastPushHeaders = null;
-  let mockResponse = { statusCode: 200, data: [{ user_id: 'default', data: { meds: { bottles: [] } }, updated_at: '2026-06-01T00:00:00Z' }] };
+
+  // 记录每次 POST 请求（按表分组）
+  let pushCalls = [];
+  // 云端各表当前数据（mock 数据库）
+  let cloudRows = { bottles: [], checkins: [], settings: [], diary: [] };
+
+  // 路由 URL 中的表名
+  function tableOf(url) {
+    if (url.indexOf('meds_bottles') >= 0) return 'bottles';
+    if (url.indexOf('meds_checkins') >= 0) return 'checkins';
+    if (url.indexOf('meds_settings') >= 0) return 'settings';
+    if (url.indexOf('diary_entries') >= 0) return 'diary';
+    return null;
+  }
 
   const origGetApp = global.getApp;
   global.getApp = () => ({
@@ -353,28 +364,66 @@ section('15. settings 非法入参被忽略');
   supabase._setSyncEnabled(true);
   supabase._injectMockFetch(async (opts) => {
     if (opts.method === 'POST') {
-      lastPushBody = opts.data;
-      lastPushHeaders = opts.header;
-      return { statusCode: 200, data: [{ user_id: 'default', data: opts.data.data, updated_at: '2026-06-02T00:00:00Z' }] };
+      pushCalls.push({ url: opts.url, data: opts.data, header: opts.header });
+      return { statusCode: 200, data: opts.data };
     }
-    return mockResponse;
+    // GET 按 URL 路由返回云端各表数据
+    const t = tableOf(opts.url);
+    return { statusCode: 200, data: t ? cloudRows[t] : [] };
   });
 
+  // 1. push：makeState 有 1 bottle + 1 settings（checkins/diary 为空不发请求）
   const pushRes = await supabase.pushToCloud(makeState());
   assert(pushRes.ok, '推送成功');
-  assert(lastPushBody && lastPushBody.user_id === 'default', '推送 user_id 正确');
-  assert(lastPushHeaders && lastPushHeaders.apikey, '推送带 apikey header');
+  assert(pushCalls.length === 2, `推送触发 2 个表请求 (实际 ${pushCalls.length})`);
+  assert(pushCalls.some(c => c.url.indexOf('meds_bottles') >= 0), '包含 bottles 表');
+  assert(pushCalls.some(c => c.url.indexOf('meds_settings') >= 0), '包含 settings 表');
+  assert(pushCalls[0].header && pushCalls[0].header.apikey, '推送带 apikey header');
+  assert(pushCalls[0].data[0].user_id === 'default', '推送 user_id 正确');
+  // 字段为 snake_case
+  assert(pushCalls.find(c => c.url.indexOf('meds_bottles') >= 0).data[0].bottle_number === 1, '字段转 snake_case');
+  assert(pushCalls.find(c => c.url.indexOf('meds_settings') >= 0).data[0].reminder_time === '08:00', 'settings 字段转 snake_case');
 
-  // 拉取前用一个比 push 返回的 06-02 更新的云端时间戳，确保 cloud 较新
-  mockResponse = { statusCode: 200, data: [{ user_id: 'default', data: { meds: { bottles: [] } }, updated_at: '2026-06-03T00:00:00Z' }] };
+  // 2. pull：云端有较新数据 → cloud 覆盖本地
+  pushCalls = [];
+  cloudRows = {
+    bottles: [{ user_id: 'default', id: 99, bottle_number: 1, total_pills: 30, remaining_pills: 5, start_date: '2026-01-01', is_active: true, created_at: '2026-06-05T00:00:00Z', updated_at: '2026-06-05T00:00:00Z' }],
+    checkins: [],
+    settings: [{ user_id: 'default', reminder_time: '09:30', notification_enabled: true, low_threshold: 5, pills_per_day: 2, updated_at: '2026-06-05T00:00:00Z' }],
+    diary: [{ user_id: 'default', id: 7, date: '2026-06-04', content: '云端日记', mood: 'good', tags: ['x'], created_at: '2026-06-04T00:00:00Z', updated_at: '2026-06-05T00:00:00Z' }]
+  };
+  // 让本地同步时间戳早于云端，确保走 cloud 分支
+  storage.writeSyncMeta({ updatedAt: '2026-01-01T00:00:00Z' });
   const pullRes = await supabase.pullFromCloud();
   assert(pullRes.ok, '拉取成功');
   assert(pullRes.source === 'cloud', '云端较新 → cloud');
+  assert(pullRes.state.meds.bottles[0].id === 99, '云端 bottle 覆盖本地');
+  assert(pullRes.state.meds.bottles[0].bottleNumber === 1, 'snake_case 还原为 camelCase');
+  assert(pullRes.state.meds.settings.pillsPerDay === 2, '云端 settings 覆盖本地');
+  assert(pullRes.state.meds.settings.reminderTime === '09:30', 'reminderTime 还原');
+  assert(pullRes.state.diary.entries[0].content === '云端日记', '云端 diary 覆盖本地');
+  assert(pushCalls.length === 0, '云端较新时不触发 push');
 
-  mockResponse = { statusCode: 200, data: [] };
+  // 3. pull：云端无数据 → 推本地
+  pushCalls = [];
+  cloudRows = { bottles: [], checkins: [], settings: [], diary: [] };
+  storage.writeSyncMeta({ updatedAt: '2026-01-01T00:00:00Z' }); // 让本地时间戳更早也无妨，云端无数据直接推
   const pullRes2 = await supabase.pullFromCloud();
   assert(pullRes2.ok, '云端无记录 → 推本地成功');
+  assert(pushCalls.length >= 2, '推本地触发多表 push');
 
+  // 4. 转换器：往返一致性
+  const orig = makeState();
+  orig.meds.bottles[0].remainingPills = 17;
+  orig.meds.checkins.push({ date: '2026-06-01', bottleId: 1, taken: true, timestamp: '2026-06-01T08:00:00Z' });
+  orig.diary.entries.push({ id: 42, date: '2026-06-01', content: 'hello', mood: 'good', tags: ['t1'], createdAt: '2026-06-01T08:00:00Z', updatedAt: '2026-06-01T08:00:00Z' });
+  const roundTrip = supabase._rowsToState(supabase._stateToRows(orig));
+  assert(roundTrip.meds.bottles[0].remainingPills === 17, '往返：bottle 余量保留');
+  assert(roundTrip.meds.checkins[0].date === '2026-06-01' && roundTrip.meds.checkins[0].taken === true, '往返：checkin 保留');
+  assert(roundTrip.meds.settings.pillsPerDay === 1, '往返：settings 保留');
+  assert(roundTrip.diary.entries[0].content === 'hello' && roundTrip.diary.entries[0].id === 42, '往返：diary 保留');
+
+  // 5. 关闭同步
   supabase._setSyncEnabled(false);
   const r = await supabase.pushToCloud(makeState());
   assert(!r.ok, '关闭后 push 返回 disabled');
