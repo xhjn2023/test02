@@ -36,7 +36,9 @@ const TABLES = {
   work: 'work_tasks',
   study: 'study_plans',
   life: 'life_moments',
-  review: 'review_entries'
+  review: 'review_entries',
+  side: 'side_projects',
+  reviewDaily: 'review_daily_metrics'
 };
 
 let syncEnabled = !!SUPABASE_ANON_KEY;
@@ -88,6 +90,8 @@ function _stateToRows(state) {
   const study = s.study || {};
   const life = s.life || {};
   const review = s.review || {};
+  const side = s.side || {};
+  const reviewDaily = s.reviewDaily || {};
   return {
     bottles: (meds.bottles || []).map(b => ({
       user_id: uid,
@@ -168,6 +172,29 @@ function _stateToRows(state) {
       tags: Array.isArray(r.tags) ? r.tags : [],
       created_at: r.createdAt || now,
       updated_at: r.updatedAt || now
+    })),
+    side: (side.projects || []).map(p => ({
+      user_id: uid,
+      id: p.id,
+      title: p.title,
+      category: p.category,
+      done: !!p.done,
+      progress: p.progress,
+      due_date: p.dueDate,
+      tags: Array.isArray(p.tags) ? p.tags : [],
+      created_at: p.createdAt || now,
+      updated_at: p.updatedAt || now
+    })),
+    reviewDaily: (reviewDaily.metrics || []).map(m => ({
+      user_id: uid,
+      date: m.date,
+      mood: m.mood,
+      physical: m.physical,
+      mental: m.mental,
+      energy: m.energy,
+      emotion: m.emotion,
+      created_at: m.createdAt || now,
+      updated_at: m.updatedAt || now
     }))
   };
 }
@@ -256,6 +283,31 @@ function _rowsToState(rows) {
         createdAt: r.created_at,
         updatedAt: r.updated_at
       })).sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0))
+    },
+    side: {
+      projects: (rows.side || []).map(r => ({
+        id: r.id,
+        title: r.title,
+        category: r.category,
+        done: !!r.done,
+        progress: r.progress,
+        dueDate: r.due_date,
+        tags: Array.isArray(r.tags) ? r.tags : [],
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })).sort((a, b) => (Number(a.id) || 0) - (Number(b.id) || 0))
+    },
+    reviewDaily: {
+      metrics: (rows.reviewDaily || []).map(r => ({
+        date: r.date,
+        mood: r.mood,
+        physical: r.physical,
+        mental: r.mental,
+        energy: r.energy,
+        emotion: r.emotion,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      })).sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0))
     }
   });
 }
@@ -300,7 +352,7 @@ async function pushToCloud(state) {
   if (app && app._setSyncStatus) app._setSyncStatus('syncing');
   try {
     const rows = _stateToRows(state);
-    // 并发推送 8 张表（空数组不发请求）。用 allSettled 容错：
+    // 并发推送 10 张表（空数组不发请求）。用 allSettled 容错：
     // 单表失败（如表不存在/权限）不阻断其他表，避免整体失败导致用户以为没保存
     const settled = await Promise.allSettled([
       _upsertTable(TABLES.bottles, rows.bottles),
@@ -310,7 +362,9 @@ async function pushToCloud(state) {
       _upsertTable(TABLES.work, rows.work),
       _upsertTable(TABLES.study, rows.study),
       _upsertTable(TABLES.life, rows.life),
-      _upsertTable(TABLES.review, rows.review)
+      _upsertTable(TABLES.review, rows.review),
+      _upsertTable(TABLES.side, rows.side),
+      _upsertTable(TABLES.reviewDaily, rows.reviewDaily)
     ]);
     const failures = settled.filter(r => r.status === 'rejected');
     const okCount = settled.length - failures.length;
@@ -355,7 +409,7 @@ async function pullFromCloud() {
   if (app && app._setSyncStatus) app._setSyncStatus('syncing');
   try {
     // 用 allSettled 容错：单表失败（如表不存在/网络）不阻断其他表
-    // 否则 8 张表中任意一张 404 会让整个 Promise.all reject，导致 state 保持空默认值，
+    // 否则 10 张表中任意一张 404 会让整个 Promise.all reject，导致 state 保持空默认值，
     // 用户重启小程序后看不到任何已保存数据
     const settled = await Promise.allSettled([
       _fetchTable(TABLES.bottles),
@@ -365,16 +419,20 @@ async function pullFromCloud() {
       _fetchTable(TABLES.work),
       _fetchTable(TABLES.study),
       _fetchTable(TABLES.life),
-      _fetchTable(TABLES.review)
+      _fetchTable(TABLES.review),
+      _fetchTable(TABLES.side),
+      _fetchTable(TABLES.reviewDaily)
     ]);
-    const bottles  = settled[0].status === 'fulfilled' ? settled[0].value : [];
-    const checkins = settled[1].status === 'fulfilled' ? settled[1].value : [];
-    const settings = settled[2].status === 'fulfilled' ? settled[2].value : [];
-    const diary    = settled[3].status === 'fulfilled' ? settled[3].value : [];
-    const work     = settled[4].status === 'fulfilled' ? settled[4].value : [];
-    const study    = settled[5].status === 'fulfilled' ? settled[5].value : [];
-    const life     = settled[6].status === 'fulfilled' ? settled[6].value : [];
-    const review   = settled[7].status === 'fulfilled' ? settled[7].value : [];
+    const bottles     = settled[0].status === 'fulfilled' ? settled[0].value : [];
+    const checkins    = settled[1].status === 'fulfilled' ? settled[1].value : [];
+    const settings    = settled[2].status === 'fulfilled' ? settled[2].value : [];
+    const diary       = settled[3].status === 'fulfilled' ? settled[3].value : [];
+    const work        = settled[4].status === 'fulfilled' ? settled[4].value : [];
+    const study       = settled[5].status === 'fulfilled' ? settled[5].value : [];
+    const life        = settled[6].status === 'fulfilled' ? settled[6].value : [];
+    const review      = settled[7].status === 'fulfilled' ? settled[7].value : [];
+    const side        = settled[8].status === 'fulfilled' ? settled[8].value : [];
+    const reviewDaily = settled[9].status === 'fulfilled' ? settled[9].value : [];
 
     const failures = settled.filter(r => r.status === 'rejected');
     if (failures.length) {
@@ -404,7 +462,9 @@ async function pullFromCloud() {
       work: _mergeTable(work, localRows.work),
       study: _mergeTable(study, localRows.study),
       life: _mergeTable(life, localRows.life),
-      review: _mergeTable(review, localRows.review)
+      review: _mergeTable(review, localRows.review),
+      side: _mergeTable(side, localRows.side),
+      reviewDaily: _mergeTable(reviewDaily, localRows.reviewDaily)
     };
 
     const mergedState = _rowsToState(merged);
@@ -420,7 +480,9 @@ async function pullFromCloud() {
       (!work.length && localRows.work.length) ||
       (!study.length && localRows.study.length) ||
       (!life.length && localRows.life.length) ||
-      (!review.length && localRows.review.length);
+      (!review.length && localRows.review.length) ||
+      (!side.length && localRows.side.length) ||
+      (!reviewDaily.length && localRows.reviewDaily.length);
     if (hasLocalOnlyData) {
       await pushToCloud(mergedState);
     }

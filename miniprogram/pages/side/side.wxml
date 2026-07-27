@@ -1,0 +1,110 @@
+<view class="page-wrap">
+
+  <view class="page-header">
+    <view class="row-between">
+      <view>
+        <view class="page-title">🚀 副业</view>
+        <view class="page-sub">副业项目 · 成长追踪</view>
+      </view>
+      <view class="tag tag-purple">进行中 {{stat.inProgress}}</view>
+    </view>
+  </view>
+
+  <view class="container">
+    <view class="stat-grid-2">
+      <view class="stat-card">
+        <view class="stat-icon gradient-primary">⏳</view>
+        <view class="stat-label">进行中</view>
+        <view class="stat-value">{{stat.inProgress}}</view>
+        <view class="stat-sub text-muted">共 {{stat.total}} 个项目</view>
+      </view>
+      <view class="stat-card">
+        <view class="stat-icon gradient-green">✅</view>
+        <view class="stat-label">已完成</view>
+        <view class="stat-value">{{stat.done}}</view>
+        <view class="stat-sub text-muted">平均进度 {{stat.avgProgress}}%</view>
+      </view>
+    </view>
+
+    <scroll-view class="cat-scroll" scroll-x="true">
+      <view wx:for="{{categories}}" wx:key="*this"
+        class="cat-tag {{activeCategory === item ? 'active' : ''}}"
+        data-cat="{{item}}" bindtap="onCategoryFilter">{{item}}</view>
+    </scroll-view>
+
+    <view wx:if="{{!list.length}}" class="empty-state">
+      <text class="empty-icon">💼</text>
+      <text>暂无项目，点击右下角 + 添加</text>
+    </view>
+
+    <view wx:for="{{list}}" wx:key="id" class="card side-card">
+      <view class="row-between mb-half">
+        <view class="flex-1 row gap-2">
+          <view class="checkbox {{item.done ? 'checked' : ''}}" data-id="{{item.id}}" bindtap="onToggle">
+            <text wx:if="{{item.done}}" class="checkbox-icon">✓</text>
+          </view>
+          <view class="flex-1">
+            <text class="text-base {{item.done ? 'text-muted line-through' : 'font-semibold text-gray-900'}}">{{item.title}}</text>
+          </view>
+        </view>
+        <view class="tag {{item.categoryTagClass}}">{{item.category}}</view>
+      </view>
+
+      <view class="side-progress-wrap mb-half">
+        <view class="progress-bar">
+          <view class="progress-fill {{item.progressFillClass}}" style="width: {{item.progress}}%"></view>
+        </view>
+        <text class="text-xs text-muted side-progress-text">{{item.progress}}%</text>
+      </view>
+
+      <view class="row-between">
+        <text class="text-xs text-muted">📅 {{item.dueDate || '暂无截止日期'}}</text>
+        <view class="del-btn" data-id="{{item.id}}" bindtap="onDelete">删除</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="fab" bindtap="onFabTap">+</view>
+</view>
+
+<view wx:if="{{showAddModal}}" class="modal-mask" bindtap="onCloseModal">
+  <view class="modal-content" catchtap="">
+    <view class="modal-header row-between">
+      <view class="text-lg font-semibold text-gray-900">新建项目</view>
+      <view class="modal-close" bindtap="onCloseModal">✕</view>
+    </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">项目名称</text>
+      <input class="input-soft" value="{{draft.title}}" placeholder="输入项目名称..."
+        data-key="title" bindinput="onDraftInput" focus="{{showAddModal}}" />
+    </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">分类</text>
+      <view class="row gap-2 flex-wrap mt-half">
+        <view wx:for="{{categories}}" wx:key="*this" wx:if="{{item !== '全部'}}"
+          class="tag {{draft.category === item ? 'tag-purple' : ''}}"
+          data-cat="{{item}}" bindtap="onCategoryPick">{{item}}</view>
+      </view>
+    </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">当前进度 ({{draft.progress}}%)</text>
+      <slider min="0" max="100" value="{{draft.progress}}" bindchange="onProgressInput"
+        activeColor="#6366f1" backgroundColor="#e5e7eb" block-size="20" />
+    </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">截止日期</text>
+      <picker mode="date" value="{{draft.dueDate}}" bindchange="onDueDateChange">
+        <view class="input-soft mt-half time-picker">{{draft.dueDate || '选择日期'}}</view>
+      </picker>
+    </view>
+
+    <view wx:if="{{draftErr}}" class="text-xs text-red mb">{{draftErr}}</view>
+    <view class="btn-primary" bindtap="onAddProject"><text>添加项目</text></view>
+  </view>
+</view>
+
+<view wx:if="{{toastShow}}" class="toast"><text>{{toastMsg}}</text></view>

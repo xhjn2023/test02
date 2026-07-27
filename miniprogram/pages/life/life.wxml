@@ -1,84 +1,82 @@
-<!-- pages/life/life.wxml -->
 <view class="page-wrap">
 
   <view class="page-header">
-    <view class="page-header-inner">
+    <view class="row-between">
       <view>
         <view class="page-title">🌿 生活</view>
         <view class="page-sub">生活记录 · 心情时刻</view>
       </view>
-      <view class="tag">{{stat.total}} 条 · 今日 {{stat.today ? '已记' : '未记'}}</view>
+      <view class="tag tag-purple">{{stat.total}} 条</view>
     </view>
   </view>
 
   <view class="container">
-    <!-- 新建 -->
-    <view class="card">
-      <view class="text-sm font-semibold mb row gap-2">
-        <text class="text-rose">＋</text><text>记录此刻</text>
-      </view>
-      <view class="row gap-2 mb-half">
-        <text class="text-xs text-muted">心情</text>
-        <view class="mood-row">
-          <view wx:for="{{moods}}" wx:key="key"
-            class="mood-btn {{item.classes}} {{draft.mood === item.key ? 'mood-active' : ''}}"
-            data-mood="{{item.key}}" bindtap="onMoodPick">
-            <text>{{item.icon}} {{item.label}}</text>
-          </view>
-        </view>
-      </view>
-      <view class="sheet-field">
-        <text class="text-xs text-muted">内容</text>
-        <textarea class="textarea-soft" value="{{draft.content}}" placeholder="此刻的心情、感悟、片段..."
-          data-key="content" bindinput="onDraftInput" />
-      </view>
-      <view class="row gap-2 mb">
-        <text class="text-xs text-muted">标签</text>
-        <view class="tag-row">
-          <view wx:for="{{presetTags}}" wx:key="*this"
-            class="tag-btn {{draft.tags[t] ? 'tag-on' : ''}}"
-            data-tag="{{item}}" bindtap="onTagToggle">
-            <text>#{{item}}</text>
-          </view>
-        </view>
-      </view>
-      <view class="row gap-3 mb">
-        <view class="flex-1">
-          <text class="text-xs text-muted">日期</text>
-          <picker mode="date" value="{{draft.date}}" bindchange="onDateChange">
-            <view class="input-soft mt-half time-picker">{{draft.date}}</view>
-          </picker>
-        </view>
-      </view>
-      <view wx:if="{{draftErr}}" class="text-xs err-text mb">{{draftErr}}</view>
-      <view class="btn-primary" bindtap="onAddMoment"><text>保存记录</text></view>
+    <view wx:if="{{!list.length}}" class="empty-state">
+      <text class="empty-icon">🌱</text>
+      <text>暂无记录，点击右下角 + 开始记录</text>
     </view>
 
-    <!-- 历史记录 -->
-    <view class="card">
-      <view class="row-between mb">
-        <view class="text-sm font-semibold row gap-2">
-          <text class="text-rose">📖</text><text>历史记录</text>
+    <view wx:for="{{list}}" wx:key="id" class="card life-card">
+      <view class="row-between mb-half">
+        <view class="row gap-2">
+          <text class="life-mood">{{item.moodIcon}}</text>
+          <text class="text-sm font-medium text-gray-700">{{item.dateLabel}}</text>
         </view>
+        <view class="del-btn" data-id="{{item.id}}" bindtap="onDelete">删除</view>
       </view>
-      <view wx:if="{{!list.length}}" class="empty-state">
-        <text class="empty-icon">🌱</text>
-        <text>暂无记录，开始记录生活的点滴</text>
+      <view class="life-content mb-half">{{item.content}}</view>
+      <view wx:if="{{item.tagsHtml.length}}" class="row gap-2 flex-wrap">
+        <view wx:for="{{item.tagsHtml}}" wx:for-item="t" wx:key="*this" class="tag tag-mini">#{{t}}</view>
       </view>
-      <view wx:for="{{list}}" wx:key="id" class="list-item" style="display:block">
-        <view class="row-between mb-half">
-          <view class="row gap-2">
-            <text class="text-base">{{item.moodIcon}}</text>
-            <text class="text-sm font-semibold">{{item.dateLabel}}</text>
-          </view>
-          <view class="del-btn" data-id="{{item.id}}" bindtap="onDelete">🗑</view>
-        </view>
-        <view class="text-sm diary-preview mb-half">{{item.content}}</view>
-        <view wx:if="{{item.tagsHtml.length}}" class="row gap-2">
-          <view wx:for="{{item.tagsHtml}}" wx:for-item="t" wx:key="*this" class="tag-mini">#{{t}}</view>
+    </view>
+  </view>
+
+  <view class="fab" bindtap="onFabTap">+</view>
+</view>
+
+<view wx:if="{{showAddModal}}" class="modal-mask" bindtap="onCloseModal">
+  <view class="modal-content" catchtap="">
+    <view class="modal-header row-between">
+      <view class="text-lg font-semibold text-gray-900">新建记录</view>
+      <view class="modal-close" bindtap="onCloseModal">✕</view>
+    </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">心情</text>
+      <view class="mood-picker">
+        <view wx:for="{{moods}}" wx:key="key"
+          class="mood-option {{draft.mood === item.key ? 'active' : ''}}"
+          data-mood="{{item.key}}" bindtap="onMoodPick">
+          <text class="mood-emoji">{{item.icon}}</text>
+          <text class="mood-label">{{item.label}}</text>
         </view>
       </view>
     </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">内容</text>
+      <textarea class="textarea-soft" value="{{draft.content}}" placeholder="此刻的心情、感悟、片段..."
+        data-key="content" bindinput="onDraftInput" focus="{{showAddModal}}" />
+    </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">标签</text>
+      <view class="row gap-2 flex-wrap mt-half">
+        <view wx:for="{{presetTags}}" wx:key="*this"
+          class="tag {{draft.tags[item] ? 'tag-purple' : ''}}"
+          data-tag="{{item}}" bindtap="onTagToggle">#{{item}}</view>
+      </view>
+    </view>
+
+    <view class="sheet-field">
+      <text class="text-xs text-muted">日期</text>
+      <picker mode="date" value="{{draft.date}}" bindchange="onDateChange">
+        <view class="input-soft mt-half time-picker">{{draft.date}}</view>
+      </picker>
+    </view>
+
+    <view wx:if="{{draftErr}}" class="text-xs text-red mb">{{draftErr}}</view>
+    <view class="btn-primary" bindtap="onAddMoment"><text>保存记录</text></view>
   </view>
 </view>
 

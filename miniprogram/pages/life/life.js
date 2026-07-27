@@ -1,26 +1,26 @@
-// pages/life/life.js
 const logic = require('../../utils/logic.js');
 
 const MOODS = [
-  { key: 'great', icon: '😀', label: '开心', classes: 'mood-great' },
-  { key: 'good',  icon: '🙂', label: '不错', classes: 'mood-good' },
-  { key: 'ok',    icon: '😐', label: '一般', classes: 'mood-ok' },
-  { key: 'bad',   icon: '😕', label: '不好', classes: 'mood-bad' },
-  { key: 'sad',   icon: '😢', label: '难过', classes: 'mood-sad' }
+  { key: 'great', icon: '🤩', label: '超赞' },
+  { key: 'happy', icon: '😊', label: '开心' },
+  { key: 'calm',  icon: '😌', label: '平静' },
+  { key: 'ok',    icon: '😐', label: '平淡' },
+  { key: 'sad',   icon: '😞', label: '低落' }
 ];
-const PRESET_TAGS = ['工作', '生活', '美食', '运动', '家庭', '旅行', '想法'];
+const PRESET_TAGS = ['工作', '生活', '美食', '运动', '家庭', '旅行', '想法', '学习'];
 const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
 Page({
   data: {
-    draft: { content: '', mood: 'good', tags: {}, date: '' },
+    draft: { content: '', mood: 'happy', tags: {}, date: '' },
     draftErr: '',
     list: [],
     moods: MOODS,
     presetTags: PRESET_TAGS,
-    stat: { total: 0, today: false },
+    stat: { total: 0 },
     toastShow: false,
-    toastMsg: ''
+    toastMsg: '',
+    showAddModal: false
   },
 
   _toastTimer: null,
@@ -55,19 +55,34 @@ Page({
     this._toastTimer = setTimeout(() => this.setData({ toastShow: false }), 2200);
   },
 
+  onFabTap() {
+    this.setData({
+      showAddModal: true,
+      draft: { content: '', mood: 'happy', tags: {}, date: logic.fmtDate(new Date()) },
+      draftErr: ''
+    });
+  },
+
+  onCloseModal() {
+    this.setData({ showAddModal: false });
+  },
+
   onDraftInput(e) {
     const key = e.currentTarget.dataset.key;
     this.setData({ [`draft.${key}`]: e.detail.value });
   },
+
   onMoodPick(e) {
     this.setData({ 'draft.mood': e.currentTarget.dataset.mood });
   },
+
   onTagToggle(e) {
     const t = e.currentTarget.dataset.tag;
     const tags = Object.assign({}, this.data.draft.tags);
     if (tags[t]) delete tags[t]; else tags[t] = true;
     this.setData({ 'draft.tags': tags });
   },
+
   onDateChange(e) {
     this.setData({ 'draft.date': e.detail.value });
   },
@@ -89,7 +104,8 @@ Page({
     this._app.globalData.state = r.state;
     this._app.saveData();
     this.setData({
-      draft: { content: '', mood: 'good', tags: {}, date: logic.fmtDate(new Date()) },
+      showAddModal: false,
+      draft: { content: '', mood: 'happy', tags: {}, date: logic.fmtDate(new Date()) },
       draftErr: ''
     });
     this.toast('记录已保存');
@@ -113,9 +129,8 @@ Page({
 
   refreshView() {
     const state = this._app.getState();
-    const today = logic.fmtDate(new Date());
     const list = logic.sortedLifeMoments(state.life.moments).slice(0, 200).map(m => {
-      const moodObj = MOODS.find(x => x.key === m.mood) || MOODS[1];
+      const moodObj = MOODS.find(x => x.key === m.mood) || MOODS[2];
       const d = new Date(m.date);
       return {
         id: m.id,
@@ -128,8 +143,7 @@ Page({
     this.setData({
       list,
       stat: {
-        total: state.life.moments.length,
-        today: state.life.moments.some(m => m.date === today)
+        total: state.life.moments.length
       }
     });
   }

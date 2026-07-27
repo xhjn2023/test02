@@ -1,44 +1,4 @@
 /* pages/home/home.wxss */
-.header-left { display: flex; align-items: center; gap: 20rpx; }
-.header-right { display: flex; align-items: center; gap: 12rpx; }
-.logo {
-  width: 80rpx; height: 80rpx; border-radius: 28rpx;
-  background: linear-gradient(135deg, #86efac, #22c55e);
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 8rpx 30rpx -12rpx rgba(16,122,87,0.3);
-}
-.logo-icon { color: #fff; font-size: 36rpx; }
-.title { font-size: 32rpx; font-weight: 600; color: #1e293b; line-height: 1.2; }
-.sub { font-size: 22rpx; color: #94a3b8; margin-top: 4rpx; }
-.icon-btn {
-  width: 72rpx; height: 72rpx; border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 4rpx 20rpx -8rpx rgba(0,0,0,0.08);
-  display: flex; align-items: center; justify-content: center;
-}
-.sync-icon { font-size: 30rpx; color: #94a3b8; }
-.sync-icon.spin { animation: spin 0.9s linear infinite; display: inline-block; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.sync-color-synced .sync-icon { color: #22c55e; }
-.sync-color-syncing .sync-icon { color: #f59e0b; }
-.sync-color-offline .sync-icon { color: #cbd5e1; }
-
-.grid-3 {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16rpx;
-}
-.stat-box {
-  background: #f0fdf4;
-  border-radius: 20rpx;
-  padding: 20rpx 12rpx;
-  text-align: center;
-}
-.stat-num { font-size: 44rpx; font-weight: 700; line-height: 1.1; }
-
-.toast {
-  position: fixed; left: 50%; bottom: 200rpx; transform: translateX(-50%);
-  background: rgba(15,23,42,0.92); color: #fff;
-  padding: 18rpx 32rpx; border-radius: 100rpx;
-  font-size: 26rpx; z-index: 999;
+.page-wrap {
+  min-height: 100vh;
 }

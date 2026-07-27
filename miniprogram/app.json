@@ -1,19 +1,34 @@
 {
   "pages": [
     "pages/home/home",
-    "pages/meds/meds",
-    "pages/diary/diary",
     "pages/work/work",
     "pages/study/study",
     "pages/life/life",
-    "pages/review/review"
+    "pages/side/side",
+    "pages/review/review",
+    "pages/meds/meds",
+    "pages/diary/diary"
   ],
   "window": {
     "backgroundTextStyle": "light",
-    "navigationBarBackgroundColor": "#fdfcf9",
+    "navigationBarBackgroundColor": "#ffffff",
     "navigationBarTitleText": "个人工作台",
     "navigationBarTextStyle": "black",
-    "backgroundColor": "#f0fdf4"
+    "backgroundColor": "#f3f4f6"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#9ca3af",
+    "selectedColor": "#6366f1",
+    "backgroundColor": "#ffffff",
+    "list": [
+      { "pagePath": "pages/home/home", "text": "首页" },
+      { "pagePath": "pages/work/work", "text": "工作" },
+      { "pagePath": "pages/study/study", "text": "学习" },
+      { "pagePath": "pages/life/life", "text": "生活" },
+      { "pagePath": "pages/side/side", "text": "副业" },
+      { "pagePath": "pages/review/review", "text": "复盘" }
+    ]
   },
   "style": "v2",
   "sitemapLocation": "sitemap.json",
