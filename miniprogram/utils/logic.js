@@ -22,6 +22,12 @@ const DEFAULT_DATA = {
   },
   review: {
     entries: []    // { id, periodType, periodStart, periodEnd, content, rating, tags, createdAt, updatedAt }
+  },
+  side: {
+    projects: []   // { id, title, category, done, progress, dueDate, tags, createdAt, updatedAt }
+  },
+  reviewDaily: {
+    metrics: []    // { date, mood, physical, mental, energy, emotion, createdAt, updatedAt }
   }
 };
 
@@ -59,6 +65,10 @@ function reconcile(p) {
   if (!Array.isArray(p.life.moments)) p.life.moments = [];
   if (!p.review || typeof p.review !== 'object') p.review = { entries: [] };
   if (!Array.isArray(p.review.entries)) p.review.entries = [];
+  if (!p.side || typeof p.side !== 'object') p.side = { projects: [] };
+  if (!Array.isArray(p.side.projects)) p.side.projects = [];
+  if (!p.reviewDaily || typeof p.reviewDaily !== 'object') p.reviewDaily = { metrics: [] };
+  if (!Array.isArray(p.reviewDaily.metrics)) p.reviewDaily.metrics = [];
   return p;
 }
 
@@ -85,7 +95,7 @@ function estFinishDate(b, pillsPerDay) {
 function calcMedsStreak(checkins, todayStr) {
   const set = new Set((checkins || []).filter(c => c && c.taken && c.date).map(c => c.date));
   let s = 0;
-  const d = new Date();
+  const d = new Date(todayStr);
   // todayStr 形如 'YYYY-MM-DD'
   if (!set.has(todayStr)) d.setDate(d.getDate() - 1);
   let cur = fmtDate(d);
@@ -101,7 +111,7 @@ function calcMedsStreak(checkins, todayStr) {
 function calcDiaryStreak(entries, todayStr) {
   const set = new Set((entries || []).filter(e => e && e.date).map(e => e.date));
   let s = 0;
-  const d = new Date();
+  const d = new Date(todayStr);
   if (!set.has(todayStr)) d.setDate(d.getDate() - 1);
   let cur = fmtDate(d);
   while (set.has(cur)) {
@@ -603,6 +613,137 @@ function reviewStats(entries) {
 }
 
 // ============================================================
+// 副业 Side：projects [{ id, title, category, done, progress(0-100), dueDate, tags, createdAt, updatedAt }]
+// ============================================================
+function addSideProject(state, project) {
+  const s = clone(state);
+  const title = (project && project.title || '').trim();
+  if (!title) return { state: s, error: '项目名称不能为空' };
+  let progress = parseInt(project.progress, 10);
+  if (isNaN(progress)) progress = 0;
+  progress = Math.max(0, Math.min(100, progress));
+  const it = _addItem(s.side.projects, {
+    title,
+    category: project.category || '自媒体',
+    done: !!project.done,
+    progress,
+    dueDate: project.dueDate || '',
+    tags: Array.isArray(project.tags) ? project.tags.slice() : []
+  });
+  return { state: s, error: null, item: it };
+}
+function updateSideProject(state, id, patch) {
+  const s = clone(state);
+  const p = {};
+  if (patch.title != null) {
+    const v = String(patch.title).trim();
+    if (!v) return { state: s, error: '项目名称不能为空' };
+    p.title = v;
+  }
+  if (patch.category != null) p.category = String(patch.category);
+  if (patch.dueDate != null) p.dueDate = String(patch.dueDate);
+  if (typeof patch.done === 'boolean') {
+    p.done = patch.done;
+    if (patch.done) p.progress = 100;
+  }
+  if (patch.progress != null) {
+    let v = parseInt(patch.progress, 10);
+    if (isNaN(v)) v = 0;
+    p.progress = Math.max(0, Math.min(100, v));
+    if (p.progress >= 100) p.done = true;
+  }
+  if (Array.isArray(patch.tags)) p.tags = patch.tags.slice();
+  const it = _updateItem(s.side.projects, id, p);
+  if (!it) return { state: s, error: '副业项目不存在' };
+  return { state: s, error: null, item: it };
+}
+function toggleSideProject(state, id) {
+  const s = clone(state);
+  const it = s.side.projects.find(x => x.id === id);
+  if (!it) return { state: s, error: '副业项目不存在' };
+  it.done = !it.done;
+  it.progress = it.done ? 100 : (it.progress > 0 ? it.progress : 0);
+  it.updatedAt = nowISO();
+  return { state: s, error: null, item: it };
+}
+function deleteSideProject(state, id) {
+  const s = clone(state);
+  s.side.projects = _deleteItem(s.side.projects, id);
+  return s;
+}
+function sortedSideProjects(projects) {
+  return (projects || []).slice().sort((a, b) => {
+    if (!!a.done !== !!b.done) return a.done ? 1 : -1;
+    return (a.createdAt < b.createdAt) ? -1 : 1;
+  });
+}
+function sideStats(projects) {
+  const arr = projects || [];
+  const inProgress = arr.filter(x => !x.done && x.progress > 0).length;
+  const totalProgress = arr.reduce((s, x) => s + (Number(x.progress) || 0), 0);
+  const avgProgress = arr.length ? Math.round(totalProgress / arr.length) : 0;
+  return {
+    total: arr.length,
+    done: arr.filter(x => x.done).length,
+    inProgress,
+    avgProgress
+  };
+}
+
+// ============================================================
+// 每日复盘指标 ReviewDaily：metrics [{ date, mood, physical, mental, energy, emotion, createdAt, updatedAt }]
+//  体能 physical  心力 energy  脑力 mental  情绪 emotion  均 0-10
+// ============================================================
+function _clamp10(v) {
+  const n = Number(v);
+  if (isNaN(n)) return 5;
+  return Math.max(0, Math.min(10, n));
+}
+function saveReviewDaily(state, dateStr, metrics) {
+  const s = clone(state);
+  if (!dateStr) return { state: s, error: '日期不能为空' };
+  const m = metrics || {};
+  let rec = s.reviewDaily.metrics.find(x => x.date === dateStr);
+  const now = nowISO();
+  const data = {
+    mood: m.mood || 'good',
+    physical: _clamp10(m.physical),
+    mental: _clamp10(m.mental),
+    energy: _clamp10(m.energy),
+    emotion: _clamp10(m.emotion)
+  };
+  if (rec) {
+    Object.assign(rec, data, { updatedAt: now });
+  } else {
+    rec = Object.assign({ date: dateStr, createdAt: now, updatedAt: now }, data);
+    s.reviewDaily.metrics.push(rec);
+  }
+  return { state: s, error: null, item: rec };
+}
+function getReviewDaily(state, dateStr) {
+  if (!state || !state.reviewDaily || !Array.isArray(state.reviewDaily.metrics)) return null;
+  return state.reviewDaily.metrics.find(x => x.date === dateStr) || null;
+}
+function deleteReviewDaily(state, dateStr) {
+  const s = clone(state);
+  s.reviewDaily.metrics = s.reviewDaily.metrics.filter(x => x.date !== dateStr);
+  return s;
+}
+function reviewDailyStreak(metrics, todayStr) {
+  const set = new Set((metrics || []).filter(m => m && m.date).map(m => m.date));
+  let streak = 0;
+  const d = new Date(todayStr);
+  if (!set.has(todayStr)) d.setDate(d.getDate() - 1);
+  let cur = fmtDate(d);
+  while (set.has(cur)) {
+    streak++;
+    d.setDate(d.getDate() - 1);
+    cur = fmtDate(d);
+  }
+  return streak;
+}
+
+// ============================================================
 // 模块统计概览：给首页汇总每个模块的数字
 // ============================================================
 function moduleOverview(state) {
@@ -610,6 +751,13 @@ function moduleOverview(state) {
   const today = fmtDate(new Date());
   const medStreak = calcMedsStreak(s.meds.checkins, today);
   const diaryStreak = calcDiaryStreak(s.diary.entries, today);
+  const studyDone = s.study.plans.filter(t => t.completed);
+  const studyMinutes = studyDone.reduce((sum, t) => sum + (Number(t.durationMin) || 0), 0);
+  const workTasksToday = s.work.tasks.filter(t => {
+    if (t.dueDate) return t.dueDate === today;
+    const d = t.createdAt ? new Date(t.createdAt) : null;
+    return d && fmtDate(d) === today;
+  });
   return {
     meds: {
       streak: medStreak,
@@ -622,18 +770,41 @@ function moduleOverview(state) {
     },
     work: {
       total: s.work.tasks.length,
-      pending: s.work.tasks.filter(t => !t.done).length
+      pending: s.work.tasks.filter(t => !t.done).length,
+      todayTotal: workTasksToday.length,
+      todayDone: workTasksToday.filter(t => t.done).length
     },
     study: {
       total: s.study.plans.length,
-      done: s.study.plans.filter(t => t.completed).length
+      done: studyDone.length,
+      minutes: studyMinutes,
+      streak: calcStudyStreak(s.study.plans, today)
     },
     life: {
       total: s.life.moments.length,
       today: s.life.moments.some(m => m.date === today)
     },
-    review: reviewStats(s.review.entries)
+    review: reviewStats(s.review.entries),
+    side: sideStats(s.side.projects),
+    reviewDaily: {
+      today: s.reviewDaily.metrics.some(m => m.date === today),
+      streak: reviewDailyStreak(s.reviewDaily.metrics, today),
+      total: s.reviewDaily.metrics.length
+    }
   };
+}
+function calcStudyStreak(plans, todayStr) {
+  const set = new Set((plans || []).filter(p => p && p.completed && p.date).map(p => p.date));
+  let streak = 0;
+  const d = new Date(todayStr);
+  if (!set.has(todayStr)) d.setDate(d.getDate() - 1);
+  let cur = fmtDate(d);
+  while (set.has(cur)) {
+    streak++;
+    d.setDate(d.getDate() - 1);
+    cur = fmtDate(d);
+  }
+  return streak;
 }
 function logic_activeRemain(s) {
   const b = activeBottle(s);
@@ -690,6 +861,20 @@ module.exports = {
   deleteReviewEntry,
   sortedReviewEntries,
   reviewStats,
+  // side 副业
+  addSideProject,
+  updateSideProject,
+  toggleSideProject,
+  deleteSideProject,
+  sortedSideProjects,
+  sideStats,
+  // reviewDaily 每日复盘指标
+  saveReviewDaily,
+  getReviewDaily,
+  deleteReviewDaily,
+  reviewDailyStreak,
+  // 学习连续天数
+  calcStudyStreak,
   // 首页概览
   moduleOverview
 };

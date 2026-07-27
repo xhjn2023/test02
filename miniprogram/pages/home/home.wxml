@@ -1,109 +1,117 @@
-<!-- pages/home/home.wxml -->
+<!--pages/home/home.wxml-->
 <view class="page-wrap">
 
-  <!-- 顶部标题栏 -->
-  <view class="page-header">
-    <view class="page-header-inner">
-      <view class="header-left">
-        <view class="logo">
-          <text class="logo-icon">★</text>
-        </view>
-        <view>
-          <view class="title">个人工作台</view>
-          <view class="sub">{{todayLabel}}</view>
-        </view>
-      </view>
-      <view class="header-right">
-        <view class="icon-btn {{syncColorClass}}" bindtap="onSyncTap">
-          <text class="sync-icon {{syncSpinning ? 'spin' : ''}}">{{syncIconChar}}</text>
-        </view>
-        <view class="icon-btn" bindtap="onExport">
-          <text class="sync-icon">⬇</text>
-        </view>
-      </view>
-    </view>
-  </view>
-
-  <!-- 今日概览 -->
+  <!-- Hero 卡片 -->
   <view class="container">
-    <view class="card">
-      <view class="row-between mb">
-        <view class="text-xl font-semibold">今日概览</view>
-        <view class="tag">{{overview.meds.streak}} 天打卡</view>
+    <view class="card-hero gradient-primary">
+      <view class="hero-bg-deco">✨</view>
+      <view class="text-sm text-white" style="opacity: 0.9;">{{greeting}}</view>
+      <view class="text-2xl text-white mt-half">{{heroTitle}}</view>
+      <view class="row gap-4 mt">
+        <view class="flex-1">
+          <view class="text-xl font-bold text-white">{{hero.tasksDone}}/{{hero.tasksTotal}}</view>
+          <view class="text-xs text-white" style="opacity: 0.8;">今日任务</view>
+        </view>
+        <view class="flex-1">
+          <view class="text-xl font-bold text-white">{{hero.studyHours}}h {{hero.studyMinutes}}m</view>
+          <view class="text-xs text-white" style="opacity: 0.8;">学习时长</view>
+        </view>
+        <view class="flex-1">
+          <view class="text-xl font-bold text-white">{{hero.streak}}天</view>
+          <view class="text-xs text-white" style="opacity: 0.8;">连续打卡</view>
+        </view>
       </view>
-      <view class="grid-3">
-        <view class="stat-box">
-          <view class="stat-num text-mint">{{overview.diary.streak}}</view>
-          <view class="text-xs text-muted">日记连续</view>
-        </view>
-        <view class="stat-box">
-          <view class="stat-num text-amber">{{overview.work.pending}}</view>
-          <view class="text-xs text-muted">待办任务</view>
-        </view>
-        <view class="stat-box">
-          <view class="stat-num text-purple">{{overview.review.avgRating || '—'}}</view>
-          <view class="text-xs text-muted">复盘评分</view>
-        </view>
+    </view>
+
+    <!-- 快捷入口 -->
+    <view class="quick-entry">
+      <view class="quick-item" bindtap="goWork">
+        <view class="quick-icon gradient-blue">💼</view>
+        <view class="quick-label">工作</view>
+      </view>
+      <view class="quick-item" bindtap="goStudy">
+        <view class="quick-icon gradient-primary">📚</view>
+        <view class="quick-label">学习</view>
+      </view>
+      <view class="quick-item" bindtap="goLife">
+        <view class="quick-icon gradient-green">🌿</view>
+        <view class="quick-label">生活</view>
+      </view>
+      <view class="quick-item" bindtap="goSide">
+        <view class="quick-icon gradient-orange">🚀</view>
+        <view class="quick-label">副业</view>
+      </view>
+      <view class="quick-item" bindtap="goReview">
+        <view class="quick-icon gradient-rose">🔍</view>
+        <view class="quick-label">复盘</view>
       </view>
     </view>
 
-    <!-- 模块入口 -->
-    <view class="module-grid">
-      <view class="module-card m-mint" bindtap="goMeds">
-        <view class="module-icon" style="background: linear-gradient(135deg, #86efac, #22c55e);">
-          <text style="color:#fff">💊</text>
-        </view>
-        <view class="module-name">吃药提醒</view>
-        <view class="module-desc">每日打卡 · 余量管理</view>
-        <view class="module-stat text-mint">余 {{overview.meds.remain}} 颗 · 连续 {{overview.meds.streak}} 天</view>
-      </view>
-
-      <view class="module-card m-amber" bindtap="goDiary">
-        <view class="module-icon" style="background: linear-gradient(135deg, #fde68a, #f59e0b);">
-          <text style="color:#fff">📖</text>
-        </view>
-        <view class="module-name">每日日记</view>
-        <view class="module-desc">日期选择 · 心情标签</view>
-        <view class="module-stat text-amber">{{overview.diary.today ? '今日已记' : '今日未记'}} · 共 {{overview.diary.total}} 篇</view>
-      </view>
-
-      <view class="module-card m-blue" bindtap="goWork">
-        <view class="module-icon" style="background: linear-gradient(135deg, #93c5fd, #2563eb);">
-          <text style="color:#fff">💼</text>
-        </view>
-        <view class="module-name">工作</view>
-        <view class="module-desc">任务清单 · 优先级</view>
-        <view class="module-stat text-blue">待办 {{overview.work.pending}} / 共 {{overview.work.total}}</view>
-      </view>
-
-      <view class="module-card m-purple" bindtap="goStudy">
-        <view class="module-icon" style="background: linear-gradient(135deg, #c4b5fd, #7c3aed);">
-          <text style="color:#fff">📚</text>
-        </view>
-        <view class="module-name">学习</view>
-        <view class="module-desc">学习计划 · 时长统计</view>
-        <view class="module-stat text-purple">已学 {{overview.study.done}} / 共 {{overview.study.total}}</view>
-      </view>
-
-      <view class="module-card m-rose" bindtap="goLife">
-        <view class="module-icon" style="background: linear-gradient(135deg, #fda4af, #db2777);">
-          <text style="color:#fff">🌿</text>
-        </view>
-        <view class="module-name">生活</view>
-        <view class="module-desc">生活记录 · 心情时刻</view>
-        <view class="module-stat text-rose">{{overview.life.today ? '今日已记' : '今日未记'}} · 共 {{overview.life.total}} 条</view>
-      </view>
-
-      <view class="module-card m-teal" bindtap="goReview">
-        <view class="module-icon" style="background: linear-gradient(135deg, #5eead4, #0d9488);">
-          <text style="color:#fff">🔍</text>
-        </view>
-        <view class="module-name">复盘</view>
-        <view class="module-desc">周月复盘 · 评分归档</view>
-        <view class="module-stat text-teal">共 {{overview.review.total}} 篇 · 均 {{overview.review.avgRating || '—'}}</view>
-      </view>
+    <!-- 五大板块 -->
+    <view class="section-title">
+      <text class="section-emoji">📋</text>
+      <text>功能板块</text>
     </view>
+
+    <view class="section-item" bindtap="goMeds">
+      <view class="sec-icon gradient-green">💊</view>
+      <view class="sec-text">
+        <view class="sec-title">吃药提醒</view>
+        <view class="sec-desc">连续 {{overview.meds.streak}} 天 · 剩余 {{overview.meds.remain}} 粒</view>
+      </view>
+      <view class="sec-arrow">›</view>
+    </view>
+
+    <view class="section-item" bindtap="goWork">
+      <view class="sec-icon gradient-blue">💼</view>
+      <view class="sec-text">
+        <view class="sec-title">工作</view>
+        <view class="sec-desc">待办 {{overview.work.pending}} 项 · 共 {{overview.work.total}} 项</view>
+      </view>
+      <view class="sec-arrow">›</view>
+    </view>
+
+    <view class="section-item" bindtap="goStudy">
+      <view class="sec-icon gradient-primary">📚</view>
+      <view class="sec-text">
+        <view class="sec-title">学习</view>
+        <view class="sec-desc">已完成 {{overview.study.done}} · 共 {{overview.study.total}} 计划</view>
+      </view>
+      <view class="sec-arrow">›</view>
+    </view>
+
+    <view class="section-item" bindtap="goLife">
+      <view class="sec-icon gradient-green">🌿</view>
+      <view class="sec-text">
+        <view class="sec-title">生活</view>
+        <view class="sec-desc">{{overview.life.today ? '今日已记录' : '今日未记录'}} · 共 {{overview.life.total}} 条</view>
+      </view>
+      <view class="sec-arrow">›</view>
+    </view>
+
+    <view class="section-item" bindtap="goSide">
+      <view class="sec-icon gradient-orange">🚀</view>
+      <view class="sec-text">
+        <view class="sec-title">副业</view>
+        <view class="sec-desc">进行中 {{overview.side.inProgress}} · 共 {{overview.side.total}} 项目</view>
+      </view>
+      <view class="sec-arrow">›</view>
+    </view>
+
+    <view class="section-item" bindtap="goReview">
+      <view class="sec-icon gradient-rose">🔍</view>
+      <view class="sec-text">
+        <view class="sec-title">复盘</view>
+        <view class="sec-desc">共 {{overview.review.total}} 篇 · 均分 {{overview.review.avgRating || '—'}}</view>
+      </view>
+      <view class="sec-arrow">›</view>
+    </view>
+
   </view>
+
+  <!-- 悬浮 + 按钮 -->
+  <view class="fab" bindtap="onFabTap">+</view>
+
 </view>
 
 <!-- Toast -->

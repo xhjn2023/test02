@@ -693,10 +693,148 @@ section('22. moduleOverview 各模块统计聚合');
   assert(ov.study.total === 1 && ov.study.done === 1, `study 1/完成 1`);
   assert(ov.life.total === 1 && ov.life.today === true, `life 今日已记`);
   assert(ov.review.total === 1 && ov.review.avgRating === 4, `review 1 篇/均 4`);
+  assert(ov.side.total === 0 && ov.side.inProgress === 0, `side 空状态`);
+  assert(ov.reviewDaily.total === 0 && ov.reviewDaily.streak === 0, `reviewDaily 空状态`);
 
   // 空状态
   const empty = logic.moduleOverview(logic.reconcile({}));
   assert(empty.meds.streak === 0 && empty.diary.total === 0 && empty.work.pending === 0, '空状态概览安全');
+  assert(empty.side.total === 0 && empty.reviewDaily.total === 0, '空状态 side/reviewDaily 安全');
+}
+
+/* =========================================================== */
+section('23. Side 副业高频压力测试（200 项目 / 切换 / 删除 / 统计）');
+{
+  let s = makeState();
+  const t0 = Date.now();
+
+  // 批量添加 200 个项目
+  for (let i = 0; i < 200; i++) {
+    const cats = ['自媒体', '电商', '技术', '内容', '其他'];
+    const r = logic.addSideProject(s, {
+      title: `副业项目 #${i}`,
+      category: cats[i % cats.length],
+      progress: i % 101,
+      dueDate: `2026-${String((i % 12) + 1).padStart(2, '0')}-15`,
+      tags: [`tag${i % 5}`]
+    });
+    assert(!r.error, `side #${i} 添加成功`);
+    s = r.state;
+  }
+  assert(s.side.projects.length === 200, `200 项目 (实际 ${s.side.projects.length})`);
+
+  // 统计
+  const st = logic.sideStats(s.side.projects);
+  assert(st.total === 200, `sideStats total 200 (实际 ${st.total})`);
+  assert(typeof st.avgProgress === 'number', `sideStats avgProgress 存在`);
+  assert(st.inProgress >= 0, `sideStats inProgress 非负`);
+
+  // 切换完成状态 100 个
+  const ids = s.side.projects.slice(0, 100).map(p => p.id);
+  ids.forEach(id => { s = logic.toggleSideProject(s, id).state; });
+  const st2 = logic.sideStats(s.side.projects);
+  assert(st2.done === 100, `toggle 后 done=100 (实际 ${st2.done})`);
+
+  // 更新
+  const first = s.side.projects[0];
+  const r2 = logic.updateSideProject(s, first.id, { title: '更新标题', progress: 80 });
+  assert(!r2.error, '更新成功');
+  assert(r2.item.title === '更新标题', '标题更新');
+  assert(r2.item.progress === 80, '进度更新');
+  s = r2.state;
+
+  // 排序
+  const sorted = logic.sortedSideProjects(s.side.projects);
+  assert(sorted.length === 200, 'sortedSideProjects 数量一致');
+
+  // 边界：空标题拒绝
+  const r3 = logic.addSideProject(s, { title: '' });
+  assert(r3.error, '空标题拒绝');
+
+  // 更新不存在
+  const r4 = logic.updateSideProject(s, 999999, { title: 'x' });
+  assert(r4.error, '更新不存在项目');
+
+  // 删除 50 个
+  const delIds = s.side.projects.slice(0, 50).map(p => p.id);
+  delIds.forEach(id => { s = logic.deleteSideProject(s, id); });
+  assert(s.side.projects.length === 150, `删后剩 150 (实际 ${s.side.projects.length})`);
+
+  const t1 = Date.now();
+  console.log(`  ✓ Side 压测耗时 ${t1 - t0}ms，最终 ${s.side.projects.length} 项目`);
+}
+
+/* =========================================================== */
+section('24. ReviewDaily 每日复盘指标压力测试（120 天 / 连续打卡 / 统计）');
+{
+  let s = makeState();
+  const t0 = Date.now();
+
+  // 连续 120 天每日记录
+  const moods = ['great', 'good', 'ok', 'bad', 'terrible'];
+  const dates = [];
+  const base = new Date('2026-08-01');
+  for (let i = 0; i < 120; i++) {
+    const d = new Date(base);
+    d.setDate(d.getDate() + i);
+    const dateStr = logic.fmtDate(d);
+    dates.push(dateStr);
+    const r = logic.saveReviewDaily(s, dateStr, {
+      mood: moods[i % 5],
+      physical: (i * 3) % 11,
+      mental: (i * 7) % 11,
+      energy: (i * 5) % 11,
+      emotion: (i * 2) % 11
+    });
+    assert(!r.error, `reviewDaily #${i} 保存成功`);
+    assert(r.item.date === dateStr, `日期正确 ${dateStr}`);
+    s = r.state;
+  }
+  assert(s.reviewDaily.metrics.length === 120, `120 天记录 (实际 ${s.reviewDaily.metrics.length})`);
+
+  // 同一天重复保存 = 更新
+  const r2 = logic.saveReviewDaily(s, dates[0], {
+    mood: 'great', physical: 10, mental: 10, energy: 10, emotion: 10
+  });
+  assert(!r2.error, '重复保存 = 更新');
+  assert(s.reviewDaily.metrics.length === 120, `更新后数量不变 (实际 ${s.reviewDaily.metrics.length})`);
+  assert(r2.item.mood === 'great', 'mood 更新');
+  assert(r2.item.physical === 10, 'physical 更新');
+
+  // getReviewDaily
+  const m = logic.getReviewDaily(s, dates[10]);
+  assert(m && m.date === dates[10], 'getReviewDaily 命中');
+  const mNull = logic.getReviewDaily(s, '2099-01-01');
+  assert(mNull === null, 'getReviewDaily 未命中返回 null');
+
+  // 越界值 clamp 到 0-10
+  const r3 = logic.saveReviewDaily(s, '2026-12-31', {
+    physical: 999, mental: -5, energy: 15, emotion: -100
+  });
+  assert(r3.item.physical === 10, `physical 999 clamp 到 10 (实际 ${r3.item.physical})`);
+  assert(r3.item.mental === 0, `mental -5 clamp 到 0 (实际 ${r3.item.mental})`);
+  assert(r3.item.energy === 10, `energy 15 clamp 到 10 (实际 ${r3.item.energy})`);
+  assert(r3.item.emotion === 0, `emotion -100 clamp 到 0 (实际 ${r3.item.emotion})`);
+
+  // 空日期拒绝
+  const r4 = logic.saveReviewDaily(s, '', {});
+  assert(r4.error, '空日期拒绝');
+
+  // 连续打卡天数（从 base 开始连续 120 天）
+  const streak = logic.reviewDailyStreak(s.reviewDaily.metrics, dates[119]);
+  assert(streak === 120, `streak 120 天 (实际 ${streak})`);
+
+  // 中断一天后 streak 计算
+  const s2 = logic.deleteReviewDaily(s, dates[60]);
+  const streak2 = logic.reviewDailyStreak(s2.reviewDaily.metrics, dates[119]);
+  assert(streak2 === 59, `中断后 streak 59 天 (实际 ${streak2})`);
+
+  // 删除
+  const s3 = logic.deleteReviewDaily(s, dates[0]);
+  assert(s3.reviewDaily.metrics.length === 119, `删后 119 (实际 ${s3.reviewDaily.metrics.length})`);
+
+  const t1 = Date.now();
+  console.log(`  ✓ ReviewDaily 压测耗时 ${t1 - t0}ms，最终 ${s.reviewDaily.metrics.length} 条`);
 }
 
 /* =========================================================== */
@@ -707,7 +845,7 @@ section('22. moduleOverview 各模块统计聚合');
   // 记录每次 POST 请求（按表分组）
   let pushCalls = [];
   // 云端各表当前数据（mock 数据库）
-  let cloudRows = { bottles: [], checkins: [], settings: [], diary: [], work: [], study: [], life: [], review: [] };
+  let cloudRows = { bottles: [], checkins: [], settings: [], diary: [], work: [], study: [], life: [], review: [], side: [], reviewDaily: [] };
 
   // 路由 URL 中的表名
   function tableOf(url) {
@@ -719,6 +857,8 @@ section('22. moduleOverview 各模块统计聚合');
     if (url.indexOf('study_plans') >= 0) return 'study';
     if (url.indexOf('life_moments') >= 0) return 'life';
     if (url.indexOf('review_entries') >= 0) return 'review';
+    if (url.indexOf('side_projects') >= 0) return 'side';
+    if (url.indexOf('review_daily_metrics') >= 0) return 'reviewDaily';
     return null;
   }
 
@@ -807,12 +947,12 @@ section('22. moduleOverview 各模块统计聚合');
   global.getApp = origGetApp;
 
   // ============================================================
-  // section 12-async-B: 8 表多模块推送 / 拉取 / 往返一致性
+  // section 12-async-B: 10 表多模块推送 / 拉取 / 往返一致性
   // ============================================================
-  section('12-async-B. 8 表多模块 mock 推送 / 拉取 / 往返');
+  section('12-async-B. 10 表多模块 mock 推送 / 拉取 / 往返');
 
   let pushCalls2 = [];
-  let cloudRows2 = { bottles: [], checkins: [], settings: [], diary: [], work: [], study: [], life: [], review: [] };
+  let cloudRows2 = { bottles: [], checkins: [], settings: [], diary: [], work: [], study: [], life: [], review: [], side: [], reviewDaily: [] };
 
   global.getApp = () => ({
     globalData: { state: logic.clone(logic.DEFAULT_DATA), syncStatus: 'offline', syncListeners: [] },
@@ -828,21 +968,24 @@ section('22. moduleOverview 各模块统计聚合');
     return { statusCode: 200, data: t ? (cloudRows2[t] || []) : [] };
   });
 
-  // 1. 构造含所有新模块的 state，push 后应触发 8 个表请求
+  // 1. 构造含所有新模块的 state，push 后应触发 10 个表请求
   let allState = makeState();
   allState = logic.addWorkTask(allState, { title: '任务1', priority: 1, dueDate: '2026-08-01' }).state;
   allState = logic.addWorkTask(allState, { title: '任务2', priority: 2, dueDate: '2026-08-02' }).state;
   allState = logic.addStudyPlan(allState, { subject: '主题', durationMin: 60 }).state;
   allState = logic.addLifeMoment(allState, { content: '生活', mood: 'good', tags: ['x'], date: '2026-07-27' }).state;
   allState = logic.addReviewEntry(allState, { content: '复盘', rating: 4, periodType: 'week', periodStart: '2026-07-21', periodEnd: '2026-07-27' }).state;
+  allState = logic.addSideProject(allState, { title: '副业1', category: '自媒体', progress: 50, dueDate: '2026-12-31' }).state;
+  allState = logic.saveReviewDaily(allState, '2026-07-27', { mood: 'good', physical: 8, mental: 7, energy: 6, emotion: 9 }).state;
 
   const pushB = await supabase.pushToCloud(allState);
-  assert(pushB.ok, '8 表推送成功');
-  // makeState 已有 bottles + settings，新模块各贡献 1-2 条 → 至少 7 个表请求
-  // (bottles, settings, work, study, life, review) = 6 个表（checkins/diary 为空不发）
+  assert(pushB.ok, '10 表推送成功');
+  // makeState 已有 bottles + settings，新模块各贡献 1-2 条 → 至少 8 个表请求
+  // (bottles, settings, work, study, life, review, side, reviewDaily) = 8 个表（checkins/diary 为空不发）
   const tableSet = new Set(pushCalls2.map(c => tableOf(c.url)));
   assert(tableSet.has('bottles') && tableSet.has('settings'), '包含 bottles+settings');
   assert(tableSet.has('work') && tableSet.has('study') && tableSet.has('life') && tableSet.has('review'), '包含 work+study+life+review');
+  assert(tableSet.has('side') && tableSet.has('reviewDaily'), '包含 side+reviewDaily');
   assert(!tableSet.has('checkins') && !tableSet.has('diary'), '空表不发请求');
   // 验证字段 snake_case
   const workPush = pushCalls2.find(c => c.url.indexOf('work_tasks') >= 0);
@@ -850,6 +993,12 @@ section('22. moduleOverview 各模块统计聚合');
   assert(workPush && workPush.data[0].user_id === 'default', 'work user_id 正确');
   const reviewPush = pushCalls2.find(c => c.url.indexOf('review_entries') >= 0);
   assert(reviewPush && reviewPush.data[0].period_type === 'week' && reviewPush.data[0].period_end === '2026-07-27', 'review 字段转 snake_case');
+  const sidePush = pushCalls2.find(c => c.url.indexOf('side_projects') >= 0);
+  assert(sidePush && sidePush.data[0].title === '副业1' && sidePush.data[0].due_date === '2026-12-31', 'side 字段转 snake_case');
+  assert(sidePush && sidePush.data[0].category === '自媒体' && sidePush.data[0].progress === 50, 'side category/progress 正确');
+  const rdPush = pushCalls2.find(c => c.url.indexOf('review_daily_metrics') >= 0);
+  assert(rdPush && rdPush.data[0].date === '2026-07-27' && rdPush.data[0].mood === 'good', 'reviewDaily 字段转 snake_case');
+  assert(rdPush && rdPush.data[0].physical === 8 && rdPush.data[0].mental === 7, 'reviewDaily physical/mental 正确');
 
   // 2. 拉取：云端有新模块数据，本地空 → 合并到本地
   pushCalls2 = [];
@@ -869,6 +1018,12 @@ section('22. moduleOverview 各模块统计聚合');
     ],
     review: [
       { user_id: 'default', id: 400, period_type: 'month', period_start: '2026-07-01', period_end: '2026-07-31', content: '云端月度复盘', rating: 5, tags: ['月度'], created_at: '2026-07-31T00:00:00Z', updated_at: '2026-07-31T00:00:00Z' }
+    ],
+    side: [
+      { user_id: 'default', id: 500, title: '云端副业', category: '电商', done: false, progress: 30, due_date: '2026-12-01', tags: ['云'], created_at: '2026-07-15T00:00:00Z', updated_at: '2026-07-15T00:00:00Z' }
+    ],
+    reviewDaily: [
+      { user_id: 'default', date: '2026-07-15', mood: 'great', physical: 9, mental: 8, energy: 7, emotion: 10, created_at: '2026-07-15T00:00:00Z', updated_at: '2026-07-15T00:00:00Z' }
     ]
   };
   global.getApp = () => ({
@@ -881,39 +1036,55 @@ section('22. moduleOverview 各模块统计聚合');
   assert(pullB.state.study.plans.length === 1 && pullB.state.study.plans[0].subject === '云端主题', '云端 study 合并');
   assert(pullB.state.life.moments.length === 1 && pullB.state.life.moments[0].content === '云端生活', '云端 life 合并');
   assert(pullB.state.review.entries.length === 1 && pullB.state.review.entries[0].periodType === 'month', '云端 review 合并 + periodType camelCase 还原');
+  assert(pullB.state.side.projects.length === 1 && pullB.state.side.projects[0].title === '云端副业', '云端 side 合并');
+  assert(pullB.state.side.projects[0].progress === 30 && pullB.state.side.projects[0].dueDate === '2026-12-01', '云端 side 字段 camelCase 还原');
+  assert(pullB.state.reviewDaily.metrics.length === 1 && pullB.state.reviewDaily.metrics[0].date === '2026-07-15', '云端 reviewDaily 合并');
+  assert(pullB.state.reviewDaily.metrics[0].physical === 9 && pullB.state.reviewDaily.metrics[0].mood === 'great', '云端 reviewDaily 字段正确');
 
   // 3. 拉取：云端新模块空，本地有数据 → 保留 + 补推
   pushCalls2 = [];
   const localOnly = logic.clone(logic.DEFAULT_DATA);
   localOnly.work.tasks.push({ id: 555, title: '本地任务', done: false, priority: 1, dueDate: '2026-09-01', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' });
   localOnly.review.entries.push({ id: 666, periodType: 'week', periodStart: '2026-08-25', periodEnd: '2026-08-31', content: '本地复盘', rating: 3, tags: [], createdAt: '2026-08-31T00:00:00Z', updatedAt: '2026-08-31T00:00:00Z' });
+  localOnly.side.projects.push({ id: 777, title: '本地副业', category: '内容', done: false, progress: 60, dueDate: '2026-11-30', tags: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' });
+  localOnly.reviewDaily.metrics.push({ date: '2026-09-01', mood: 'ok', physical: 6, mental: 5, energy: 7, emotion: 8, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z' });
   global.getApp = () => ({
     globalData: { state: localOnly, syncStatus: 'offline', syncListeners: [] },
     _setSyncStatus: function (s) { this.globalData.syncStatus = s; }
   });
-  cloudRows2 = { bottles: [], checkins: [], settings: [], diary: [], work: [], study: [], life: [], review: [] };
+  cloudRows2 = { bottles: [], checkins: [], settings: [], diary: [], work: [], study: [], life: [], review: [], side: [], reviewDaily: [] };
   const pullB2 = await supabase.pullFromCloud();
   assert(pullB2.ok, '拉取成功');
   assert(pullB2.state.work.tasks.some(t => t.title === '本地任务'), '本地 work 保留');
   assert(pullB2.state.review.entries.some(r => r.content === '本地复盘'), '本地 review 保留');
+  assert(pullB2.state.side.projects.some(p => p.title === '本地副业'), '本地 side 保留');
+  assert(pullB2.state.reviewDaily.metrics.some(m => m.date === '2026-09-01'), '本地 reviewDaily 保留');
   assert(pushCalls2.some(c => c.url.indexOf('work_tasks') >= 0), '本地 work 补推');
   assert(pushCalls2.some(c => c.url.indexOf('review_entries') >= 0), '本地 review 补推');
+  assert(pushCalls2.some(c => c.url.indexOf('side_projects') >= 0), '本地 side 补推');
+  assert(pushCalls2.some(c => c.url.indexOf('review_daily_metrics') >= 0), '本地 reviewDaily 补推');
 
-  // 4. 转换器：8 表往返一致性
+  // 4. 转换器：10 表往返一致性
   const orig8 = makeState();
   orig8.meds.bottles[0].remainingPills = 17;
   orig8.work.tasks.push({ id: 111, title: '往返任务', done: true, priority: 2, dueDate: '2026-09-09', createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T00:00:00Z' });
   orig8.study.plans.push({ id: 222, subject: '往返主题', content: '内容', durationMin: 45, completed: false, date: '2026-09-09', createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T00:00:00Z' });
   orig8.life.moments.push({ id: 333, content: '往返生活', mood: 'good', tags: ['tag1'], date: '2026-09-09', createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T00:00:00Z' });
   orig8.review.entries.push({ id: 444, periodType: 'week', periodStart: '2026-09-01', periodEnd: '2026-09-07', content: '往返复盘', rating: 4, tags: ['t'], createdAt: '2026-09-07T00:00:00Z', updatedAt: '2026-09-07T00:00:00Z' });
+  orig8.side.projects.push({ id: 555, title: '往返副业', category: '技术', done: false, progress: 75, dueDate: '2026-12-15', tags: ['t1','t2'], createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T00:00:00Z' });
+  orig8.reviewDaily.metrics.push({ date: '2026-09-09', mood: 'ok', physical: 7, mental: 6, energy: 8, emotion: 5, createdAt: '2026-09-09T00:00:00Z', updatedAt: '2026-09-09T00:00:00Z' });
   const roundTrip8 = supabase._rowsToState(supabase._stateToRows(orig8));
   assert(roundTrip8.meds.bottles[0].remainingPills === 17, '往返：bottle 余量');
   assert(roundTrip8.work.tasks[0].title === '往返任务' && roundTrip8.work.tasks[0].dueDate === '2026-09-09', '往返：work');
   assert(roundTrip8.study.plans[0].durationMin === 45 && roundTrip8.study.plans[0].subject === '往返主题', '往返：study');
   assert(roundTrip8.life.moments[0].content === '往返生活' && roundTrip8.life.moments[0].tags[0] === 'tag1', '往返：life');
   assert(roundTrip8.review.entries[0].periodType === 'week' && roundTrip8.review.entries[0].rating === 4, '往返：review');
+  assert(roundTrip8.side.projects[0].title === '往返副业' && roundTrip8.side.projects[0].progress === 75, '往返：side');
+  assert(roundTrip8.side.projects[0].dueDate === '2026-12-15' && roundTrip8.side.projects[0].category === '技术', '往返：side dueDate/category');
+  assert(roundTrip8.reviewDaily.metrics[0].date === '2026-09-09' && roundTrip8.reviewDaily.metrics[0].mood === 'ok', '往返：reviewDaily');
+  assert(roundTrip8.reviewDaily.metrics[0].physical === 7 && roundTrip8.reviewDaily.metrics[0].emotion === 5, '往返：reviewDaily 四维');
 
-  // 5. 高频压力：8 表同时大量数据 push/pull
+  // 5. 高频压力：10 表同时大量数据 push/pull
   pushCalls2 = [];
   let stressState = makeState();
   for (let i = 0; i < 100; i++) {
@@ -921,17 +1092,27 @@ section('22. moduleOverview 各模块统计聚合');
     stressState = logic.addStudyPlan(stressState, { subject: `S${i}`, durationMin: i }).state;
     stressState = logic.addLifeMoment(stressState, { content: `L${i}`, mood: 'good', date: '2026-07-27' }).state;
     stressState = logic.addReviewEntry(stressState, { content: `R${i}`, rating: 3 }).state;
+    stressState = logic.addSideProject(stressState, { title: `P${i}`, category: '自媒体', progress: i % 101 }).state;
+    const d = new Date('2026-01-01');
+    d.setDate(d.getDate() + i);
+    stressState = logic.saveReviewDaily(stressState, logic.fmtDate(d), { physical: i % 11, mental: i % 11, energy: i % 11, emotion: i % 11 }).state;
   }
   const stressPush = await supabase.pushToCloud(stressState);
-  assert(stressPush.ok, '8 表压测推送成功');
+  assert(stressPush.ok, '10 表压测推送成功');
   const workPushCount = pushCalls2.filter(c => c.url.indexOf('work_tasks') >= 0).length;
   const studyPushCount = pushCalls2.filter(c => c.url.indexOf('study_plans') >= 0).length;
   const lifePushCount = pushCalls2.filter(c => c.url.indexOf('life_moments') >= 0).length;
   const reviewPushCount = pushCalls2.filter(c => c.url.indexOf('review_entries') >= 0).length;
-  assert(workPushCount === 1 && studyPushCount === 1 && lifePushCount === 1 && reviewPushCount === 1, `8 表并发 1 次请求/表 (work=${workPushCount},study=${studyPushCount},life=${lifePushCount},review=${reviewPushCount})`);
+  const sidePushCount = pushCalls2.filter(c => c.url.indexOf('side_projects') >= 0).length;
+  const rdPushCount = pushCalls2.filter(c => c.url.indexOf('review_daily_metrics') >= 0).length;
+  assert(workPushCount === 1 && studyPushCount === 1 && lifePushCount === 1 && reviewPushCount === 1 && sidePushCount === 1 && rdPushCount === 1, `10 表并发 1 次请求/表 (work=${workPushCount},study=${studyPushCount},life=${lifePushCount},review=${reviewPushCount},side=${sidePushCount},rd=${rdPushCount})`);
   // 验证各表推送的行数
   const workData = pushCalls2.find(c => c.url.indexOf('work_tasks') >= 0).data;
   assert(workData.length === 100, `work 一次推 100 行 (实际 ${workData.length})`);
+  const sideData = pushCalls2.find(c => c.url.indexOf('side_projects') >= 0).data;
+  assert(sideData.length === 100, `side 一次推 100 行 (实际 ${sideData.length})`);
+  const rdData = pushCalls2.find(c => c.url.indexOf('review_daily_metrics') >= 0).data;
+  assert(rdData.length === 100, `reviewDaily 一次推 100 行 (实际 ${rdData.length})`);
 
   supabase._resetMockFetch();
   supabase._setSyncEnabled(true);

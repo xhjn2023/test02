@@ -1,100 +1,190 @@
 <!-- pages/review/review.wxml -->
 <view class="page-wrap">
 
-  <view class="page-header">
-    <view class="page-header-inner">
-      <view>
-        <view class="page-title">🔍 复盘</view>
-        <view class="page-sub">周月复盘 · 评分归档</view>
-      </view>
-      <view class="tag">{{stat.total}} 篇 · 均 {{stat.avgRating || '—'}}</view>
-    </view>
-  </view>
-
   <view class="container">
-    <!-- 新建复盘 -->
-    <view class="card">
-      <view class="text-sm font-semibold mb row gap-2">
-        <text class="text-teal">＋</text><text>新建复盘</text>
-      </view>
-      <view class="row gap-3 mb">
-        <view class="flex-1">
-          <text class="text-xs text-muted">周期类型</text>
-          <view class="seg mt-half">
-            <view class="seg-btn {{draft.periodType === 'week' ? 'seg-active' : ''}}" data-p="week" bindtap="onPeriodTypePick">周</view>
-            <view class="seg-btn {{draft.periodType === 'month' ? 'seg-active' : ''}}" data-p="month" bindtap="onPeriodTypePick">月</view>
-          </view>
+
+    <!-- Hero 卡片：粉紫渐变 -->
+    <view class="card-hero gradient-pink">
+      <view class="hero-bg-deco">🔍</view>
+      <view class="text-sm text-white" style="opacity:0.85">{{dateLabel}} {{weekDay}}</view>
+      <view class="text-3xl font-bold text-white mt-half">每日复盘</view>
+      <view class="row gap-4 mt">
+        <view>
+          <view class="text-xs text-white" style="opacity:0.75">连续复盘</view>
+          <view class="text-2xl font-bold text-white mt-half">第 {{streak}} 天</view>
         </view>
-        <view class="flex-1">
-          <text class="text-xs text-muted">评分</text>
-          <view class="rating-row mt-half">
-            <view wx:for="{{[1,2,3,4,5]}}" wx:key="*this"
-              class="star {{draft.rating >= item ? 'on' : ''}}"
-              data-r="{{item}}" bindtap="onRatingPick">★</view>
-          </view>
+        <view>
+          <view class="text-xs text-white" style="opacity:0.75">今日完成率</view>
+          <view class="text-2xl font-bold text-white mt-half">{{todayCompleteRate}}%</view>
         </view>
       </view>
-      <view class="row gap-3 mb">
-        <view class="flex-1">
-          <text class="text-xs text-muted">开始日期</text>
-          <picker mode="date" value="{{draft.periodStart}}" bindchange="onPeriodStartChange">
-            <view class="input-soft mt-half time-picker">{{draft.periodStart || '选日期'}}</view>
-          </picker>
-        </view>
-        <view class="flex-1">
-          <text class="text-xs text-muted">结束日期</text>
-          <picker mode="date" value="{{draft.periodEnd}}" bindchange="onPeriodEndChange">
-            <view class="input-soft mt-half time-picker">{{draft.periodEnd || '选日期'}}</view>
-          </picker>
-        </view>
-      </view>
-      <view class="sheet-field">
-        <text class="text-xs text-muted">复盘内容</text>
-        <textarea class="textarea-soft" value="{{draft.content}}" placeholder="本期回顾：做了什么？学到什么？下次改进什么？..."
-          data-key="content" bindinput="onDraftInput" />
-      </view>
-      <view class="row gap-2 mb">
-        <text class="text-xs text-muted">标签</text>
-        <view class="tag-row">
-          <view wx:for="{{presetTags}}" wx:key="*this"
-            class="tag-btn {{draft.tags[t] ? 'tag-on' : ''}}"
-            data-tag="{{item}}" bindtap="onTagToggle">
-            <text>#{{item}}</text>
-          </view>
-        </view>
-      </view>
-      <view wx:if="{{draftErr}}" class="text-xs err-text mb">{{draftErr}}</view>
-      <view class="btn-primary" bindtap="onAddReview"><text>保存复盘</text></view>
     </view>
 
-    <!-- 历史复盘 -->
+    <!-- 今日情绪卡片 -->
     <view class="card">
-      <view class="text-sm font-semibold mb row gap-2">
-        <text class="text-teal">📋</text><text>历史复盘</text>
+      <view class="section-title">
+        <text class="section-emoji">😊</text>
+        <text>今日情绪</text>
       </view>
-      <view wx:if="{{!list.length}}" class="empty-state">
-        <text class="empty-icon">📝</text>
-        <text>暂无复盘，先创建第一篇</text>
-      </view>
-      <view wx:for="{{list}}" wx:key="id" class="list-item" style="display:block">
-        <view class="row-between mb-half">
-          <view class="row gap-2">
-            <text class="tag" style="background:#ccfbf1;color:#0d9488">{{item.periodTypeLabel}}</text>
-            <text class="text-sm font-semibold">{{item.periodLabel}}</text>
-          </view>
-          <view class="del-btn" data-id="{{item.id}}" bindtap="onDelete">🗑</view>
-        </view>
-        <view class="rating-row mb-half">
-          <view wx:for="{{[1,2,3,4,5]}}" wx:for-item="n" wx:key="*this"
-            class="star {{item.rating >= n ? 'on' : ''}}">★</view>
-        </view>
-        <view class="text-sm diary-preview mb-half">{{item.content}}</view>
-        <view wx:if="{{item.tagsHtml.length}}" class="row gap-2">
-          <view wx:for="{{item.tagsHtml}}" wx:for-item="t" wx:key="*this" class="tag-mini">#{{t}}</view>
+      <view class="text-xs text-muted mb">选择你此刻的心情</view>
+      <view class="mood-picker">
+        <view wx:for="{{moods}}" wx:key="key"
+          class="mood-option {{currentMood === item.key ? 'active' : ''}}"
+          data-mood="{{item.key}}" bindtap="onMoodPick">
+          <text class="mood-emoji">{{item.emoji}}</text>
+          <text class="mood-label">{{item.label}}</text>
         </view>
       </view>
     </view>
+
+    <!-- 四维评分条卡片 -->
+    <view class="card">
+      <view class="section-title">
+        <text class="section-emoji">📊</text>
+        <text>四维评分</text>
+      </view>
+      <view class="score-list">
+        <view wx:for="{{scoreDims}}" wx:key="key" class="score-row" data-key="{{item.key}}" bindtap="onScoreTap">
+          <text class="score-label">{{item.label}}</text>
+          <view class="score-bar">
+            <view class="score-fill {{item.color}}" style="width: {{scores[item.key] * 10}}%"></view>
+          </view>
+          <text class="score-value">{{scores[item.key]}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 今日待办回顾卡片 -->
+    <view class="card">
+      <view class="row-between mb">
+        <view class="section-title" style="margin:0">
+          <text class="section-emoji">✅</text>
+          <text>今日待办回顾</text>
+        </view>
+        <view class="row gap-2">
+          <text class="text-sm text-muted">完成 {{todayDoneCount}}/{{todayTotalCount}} 项</text>
+          <view class="tag tag-primary">{{todayCompleteRate}}%</view>
+        </view>
+      </view>
+      <view wx:if="{{!todayTasks.length}}" class="empty-state">
+        <text class="empty-icon">📝</text>
+        <text class="text-sm">今日暂无待办任务</text>
+      </view>
+      <view wx:for="{{todayTasks}}" wx:key="id" class="list-item">
+        <view class="checkbox {{item.done ? 'checked' : ''}}" data-id="{{item.id}}" bindtap="onTaskToggle">
+          <text wx:if="{{item.done}}" class="checkbox-icon">✓</text>
+        </view>
+        <view class="flex-1">
+          <view class="text-base {{item.done ? 'line-through text-muted' : 'text-gray-700'}}">{{item.title}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 历史复盘入口 -->
+    <view class="card">
+      <view class="row-between" bindtap="toggleHistory">
+        <view class="section-title" style="margin:0">
+          <text class="section-emoji">📋</text>
+          <text>历史复盘（周/月）</text>
+        </view>
+        <text class="text-primary text-sm">{{showHistory ? '收起' : '展开'}} ›</text>
+      </view>
+
+      <view wx:if="{{showHistory}}">
+        <view class="divider"></view>
+
+        <!-- 新建复盘 -->
+        <view class="mb-half">
+          <view class="text-sm font-semibold mb row gap-2">
+            <text class="text-primary">＋</text><text>新建复盘</text>
+          </view>
+          <view class="row gap-3 mb">
+            <view class="flex-1">
+              <text class="text-xs text-muted">周期类型</text>
+              <view class="seg mt-half">
+                <view class="seg-btn {{draft.periodType === 'week' ? 'seg-active' : ''}}" data-p="week" bindtap="onPeriodTypePick">周</view>
+                <view class="seg-btn {{draft.periodType === 'month' ? 'seg-active' : ''}}" data-p="month" bindtap="onPeriodTypePick">月</view>
+              </view>
+            </view>
+            <view class="flex-1">
+              <text class="text-xs text-muted">评分</text>
+              <view class="rating-row mt-half">
+                <view wx:for="{{[1,2,3,4,5]}}" wx:key="*this"
+                  class="star {{draft.rating >= item ? 'on' : ''}}"
+                  data-r="{{item}}" bindtap="onRatingPick">★</view>
+              </view>
+            </view>
+          </view>
+          <view class="row gap-3 mb">
+            <view class="flex-1">
+              <text class="text-xs text-muted">开始日期</text>
+              <picker mode="date" value="{{draft.periodStart}}" bindchange="onPeriodStartChange">
+                <view class="input-soft mt-half time-picker">{{draft.periodStart || '选日期'}}</view>
+              </picker>
+            </view>
+            <view class="flex-1">
+              <text class="text-xs text-muted">结束日期</text>
+              <picker mode="date" value="{{draft.periodEnd}}" bindchange="onPeriodEndChange">
+                <view class="input-soft mt-half time-picker">{{draft.periodEnd || '选日期'}}</view>
+              </picker>
+            </view>
+          </view>
+          <view class="sheet-field">
+            <text class="text-xs text-muted">复盘内容</text>
+            <textarea class="textarea-soft" value="{{draft.content}}" placeholder="本期回顾：做了什么？学到什么？下次改进什么？..."
+              data-key="content" bindinput="onDraftInput" />
+          </view>
+          <view class="row gap-2 mb">
+            <text class="text-xs text-muted">标签</text>
+            <view class="row gap-2 flex-wrap">
+              <view wx:for="{{presetTags}}" wx:key="*this"
+                class="tag {{draft.tags[item] ? 'tag-primary' : ''}}"
+                data-tag="{{item}}" bindtap="onTagToggle">
+                #{{item}}
+              </view>
+            </view>
+          </view>
+          <view wx:if="{{draftErr}}" class="text-xs text-red mb">{{draftErr}}</view>
+          <view class="btn-primary" bindtap="onAddReview"><text>保存复盘</text></view>
+        </view>
+
+        <view class="divider"></view>
+
+        <!-- 历史列表 -->
+        <view class="text-sm font-semibold mb row gap-2">
+          <text class="text-primary">📜</text><text>历史记录（{{stat.total}} 篇）</text>
+        </view>
+        <view wx:if="{{!list.length}}" class="empty-state">
+          <text class="empty-icon">📝</text>
+          <text>暂无复盘，先创建第一篇</text>
+        </view>
+        <view wx:for="{{list}}" wx:key="id" class="list-item" style="display:block">
+          <view class="row-between mb-half">
+            <view class="row gap-2">
+              <text class="tag tag-purple">{{item.periodTypeLabel}}</text>
+              <text class="text-sm font-semibold">{{item.periodLabel}}</text>
+            </view>
+            <view class="del-btn" data-id="{{item.id}}" bindtap="onDelete">🗑</view>
+          </view>
+          <view class="rating-row mb-half">
+            <view wx:for="{{[1,2,3,4,5]}}" wx:for-item="n" wx:key="*this"
+              class="star {{item.rating >= n ? 'on' : ''}}">★</view>
+          </view>
+          <view class="text-sm text-gray-700 mb-half" style="line-height:1.5">{{item.content}}</view>
+          <view wx:if="{{item.tagsHtml.length}}" class="row gap-2">
+            <view wx:for="{{item.tagsHtml}}" wx:for-item="t" wx:key="*this" class="tag-mini">#{{t}}</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
   </view>
+
+  <!-- 悬浮 + 按钮 -->
+  <view class="fab" bindtap="onFabTap">
+    <text>✓</text>
+  </view>
+
 </view>
 
 <view wx:if="{{toastShow}}" class="toast"><text>{{toastMsg}}</text></view>

@@ -4,8 +4,6 @@ const logic = require('../../utils/logic.js');
 Page({
   data: {
     todayLabel: '',
-    checkinTitle: '还未打卡',
-    checkinBtnText: '完成今日打卡',
     todayChecked: false,
     streakNum: 0,
     ringPct: 0,
@@ -43,7 +41,7 @@ Page({
     });
 
     this._unsubSync = this._app.onSyncChange((status) => {
-      if (status === 'synced') this.refreshMedsView();
+      if (status === 'synced') this.refreshView();
     });
 
     const todayStr = logic.fmtDate(new Date());
@@ -55,7 +53,7 @@ Page({
   },
 
   onShow() {
-    if (this._app) this.refreshMedsView();
+    if (this._app) this.refreshView();
   },
 
   onUnload() {
@@ -64,7 +62,7 @@ Page({
 
   onPullDownRefresh() {
     this._app.manualSync().then(() => {
-      this.refreshMedsView();
+      this.refreshView();
       wx.stopPullDownRefresh();
       this.toast('已同步');
     }).catch(() => wx.stopPullDownRefresh());
@@ -84,14 +82,12 @@ Page({
     app.saveData();
   },
 
-  // ============ Toast ============
   toast(msg) {
     this.setData({ toastShow: true, toastMsg: msg });
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => this.setData({ toastShow: false }), 2200);
   },
 
-  // ============ 环形进度 Canvas ============
   _initRingCanvas() {
     const query = wx.createSelectorQuery().in(this);
     query.select('#ringCanvas').fields({ node: true, size: true }).exec((res) => {
@@ -128,15 +124,14 @@ Page({
     if (pct > 0) {
       ctx.beginPath();
       ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (pct / 100));
-      ctx.strokeStyle = '#22c55e';
+      ctx.strokeStyle = '#10b981';
       ctx.lineWidth = 9;
       ctx.lineCap = 'round';
       ctx.stroke();
     }
   },
 
-  // ============ meds 视图刷新 ============
-  refreshMedsView() {
+  refreshView() {
     const state = this._app.getState();
     const b = logic.activeBottle(state);
     const today = logic.fmtDate(new Date());
@@ -147,8 +142,6 @@ Page({
 
     const newData = {
       todayChecked,
-      checkinTitle: todayChecked ? '今日已完成 ✓' : '还未打卡',
-      checkinBtnText: todayChecked ? '已打卡，再按一次取消' : '完成今日打卡',
       streakNum: streak,
       settings: Object.assign({}, settings),
       remainPills: b ? Math.max(0, Number(b.remainingPills) || 0) : 0,
@@ -190,7 +183,6 @@ Page({
     } catch (e) { return ''; }
   },
 
-  // ============ meds 操作 ============
   onCheckin() {
     const today = logic.fmtDate(new Date());
     const state = this._app.getState();
@@ -204,14 +196,13 @@ Page({
     this._app.saveData().then(res => {
       if (!res || !res.ok) {
         this.toast('同步失败，请检查网络');
-        console.warn('[meds] 打卡同步失败:', res);
       } else if (res.partial) {
         this.toast(r.action === 'checkin' ? '打卡成功（部分同步失败）' : '已取消（部分同步失败）');
       } else {
         this.toast(r.action === 'checkin' ? '打卡成功，记得按时吃药' : '已取消今日打卡');
       }
     });
-    this.refreshMedsView();
+    this.refreshView();
   },
 
   onNewBottle() { this.openSheet('new'); },
@@ -261,38 +252,41 @@ Page({
     this._app.saveData();
     this.setData({ sheetShow: false });
     this.toast('已保存修改');
-    this.refreshMedsView();
+    this.refreshView();
   },
 
-  // 设置
   onReminderTimeChange(e) {
     const state = this._app.getState();
     this._app.globalData.state = logic.updateSettings(state, { reminderTime: e.detail.value });
     this._app.saveData();
-    this.refreshMedsView();
+    this.refreshView();
     this.toast('提醒时间已更新');
   },
   onSettingNumChange(e) {
     const key = e.currentTarget.dataset.key;
     const v = parseInt(e.detail.value, 10);
     if (isNaN(v)) return;
-    if (key === 'pillsPerDay' && v < 1) { this.toast('每日颗数不能小于1'); this.refreshMedsView(); return; }
-    if (key === 'lowThreshold' && v < 1) { this.toast('阈值不能小于1'); this.refreshMedsView(); return; }
+    if (key === 'pillsPerDay' && v < 1) { this.toast('每日颗数不能小于1'); this.refreshView(); return; }
+    if (key === 'lowThreshold' && v < 1) { this.toast('阈值不能小于1'); this.refreshView(); return; }
     const state = this._app.getState();
     this._app.globalData.state = logic.updateSettings(state, { [key]: v });
     this._app.saveData();
-    this.refreshMedsView();
+    this.refreshView();
   },
   onNotifySwitch() {
     const state = this._app.getState();
     const willOn = !state.meds.settings.notificationEnabled;
     this._app.globalData.state = logic.updateSettings(state, { notificationEnabled: willOn });
     this._app.saveData();
-    this.refreshMedsView();
+    this.refreshView();
     this.toast(willOn ? '已开启页内提醒' : '已关闭提醒');
   },
 
   onTabHistory(e) {
     this.setData({ historyTab: e.currentTarget.dataset.tab });
+  },
+
+  onFabTap() {
+    this.onNewBottle();
   }
 });

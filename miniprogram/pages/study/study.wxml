@@ -1,81 +1,97 @@
-<!-- pages/study/study.wxml -->
+<!--pages/study/study.wxml-->
 <view class="page-wrap">
 
-  <view class="page-header">
-    <view class="page-header-inner">
+  <!-- 顶部渐变 Header -->
+  <view class="card-hero gradient-primary">
+    <view class="hero-bg-deco">📚</view>
+    <view class="row-between">
       <view>
-        <view class="page-title">📚 学习</view>
-        <view class="page-sub">学习计划 · 时长统计</view>
+        <view class="text-2xl text-white font-bold mb-half">学习成长</view>
+        <view class="text-sm text-white" style="opacity: 0.9;">本周学习 {{weeklyHours}}h · 连续 {{streakDays}} 天</view>
       </view>
-      <view class="tag">{{stat.done}}/{{stat.total}} · {{stat.minutes}} 分钟</view>
+      <view class="row gap-2">
+        <view class="hero-icon">🔍</view>
+        <view class="hero-icon">🔔</view>
+      </view>
     </view>
   </view>
 
   <view class="container">
-    <!-- 新建 -->
-    <view class="card">
-      <view class="text-sm font-semibold mb row gap-2">
-        <text class="text-purple">＋</text><text>新建学习计划</text>
+
+    <!-- 分类标签横滑 -->
+    <scroll-view class="cat-scroll" scroll-x="{{true}}" enhanced="{{true}}" show-scrollbar="{{false}}">
+      <view wx:for="{{categories}}" wx:key="id" 
+            class="cat-tag {{activeCategory === item.id ? 'active' : ''}}"
+            data-id="{{item.id}}" bindtap="onCategoryTap">
+        {{item.name}}
       </view>
-      <view class="sheet-field">
-        <text class="text-xs text-muted">主题</text>
-        <input class="input-soft" value="{{draft.subject}}" placeholder="如：阅读《xxx》/ 学习 React..."
-          data-key="subject" bindinput="onDraftInput" />
+    </scroll-view>
+
+    <!-- 统计卡片 2 列网格 -->
+    <view class="stat-grid-2">
+      <view class="stat-card">
+        <view class="stat-icon gradient-blue">⏱</view>
+        <view class="stat-label">本周学习</view>
+        <view class="stat-value">{{weeklyHours}}<text class="text-sm" style="font-weight: 400;"> h</text></view>
+        <view class="stat-sub text-green">↑ 12% 较上周</view>
       </view>
-      <view class="sheet-field">
-        <text class="text-xs text-muted">详细内容（选填）</text>
-        <textarea class="textarea-soft" value="{{draft.content}}" placeholder="章节范围 / 具体内容..."
-          data-key="content" bindinput="onDraftInput" />
+      <view class="stat-card">
+        <view class="stat-icon gradient-orange">🔥</view>
+        <view class="stat-label">连续学习</view>
+        <view class="stat-value">{{streakDays}}<text class="text-sm" style="font-weight: 400;"> 天</text></view>
+        <view class="stat-sub text-muted">继续保持！</view>
       </view>
-      <view class="row gap-3 mb">
-        <view class="flex-1">
-          <text class="text-xs text-muted">计划时长（分钟）</text>
-          <input class="input-soft num-input mt-half" type="number" value="{{draft.durationMin}}"
-            data-key="durationMin" bindinput="onDraftInput" />
-        </view>
-        <view class="flex-1">
-          <text class="text-xs text-muted">计划日期</text>
-          <picker mode="date" value="{{draft.date}}" bindchange="onDateChange">
-            <view class="input-soft mt-half time-picker">{{draft.date}}</view>
-          </picker>
-        </view>
-      </view>
-      <view wx:if="{{draftErr}}" class="text-xs err-text mb">{{draftErr}}</view>
-      <view class="btn-primary" bindtap="onAddPlan"><text>添加计划</text></view>
     </view>
 
-    <!-- 列表 -->
-    <view class="card">
-      <view class="row-between mb">
-        <view class="text-sm font-semibold row gap-2">
-          <text class="text-purple">📋</text><text>计划列表</text>
-        </view>
-        <view class="seg">
-          <view class="seg-btn {{filter === 'all' ? 'seg-active' : ''}}" data-f="all" bindtap="onFilter">全部</view>
-          <view class="seg-btn {{filter === 'pending' ? 'seg-active' : ''}}" data-f="pending" bindtap="onFilter">未完成</view>
-          <view class="seg-btn {{filter === 'done' ? 'seg-active' : ''}}" data-f="done" bindtap="onFilter">已完成</view>
-        </view>
+    <!-- 在学课程区域 -->
+    <view class="section-title">
+      <text class="section-emoji">📖</text>
+      <text>在学课程</text>
+    </view>
+
+    <view wx:if="{{!courseList.length}}" class="empty-state">
+      <text class="empty-icon">📚</text>
+      <text>暂无学习计划，点击右下角添加</text>
+    </view>
+
+    <view wx:for="{{courseList}}" wx:key="id" class="course-card" bindtap="onCourseTap" data-id="{{item.id}}">
+      <view class="course-banner {{item.bannerClass}}">
+        <text>{{item.icon}}</text>
       </view>
-      <view wx:if="{{!list.length}}" class="empty-state">
-        <text class="empty-icon">📖</text>
-        <text>暂无学习计划，开始规划吧</text>
-      </view>
-      <view wx:for="{{list}}" wx:key="id" class="list-item">
-        <view class="checkbox {{item.completed ? 'checked' : ''}}" data-id="{{item.id}}" bindtap="onToggle">
-          <text wx:if="{{item.completed}}" class="checkbox-icon">✓</text>
-        </view>
-        <view class="flex-1">
-          <view class="row-between mb-half">
-            <text class="text-sm {{item.completed ? 'text-muted line-through' : 'font-semibold'}}">{{item.subject}}</text>
-            <text wx:if="{{item.durationMin}}" class="tag">{{item.durationMin}} 分钟</text>
+      <view class="course-body">
+        <view class="course-title">{{item.subject}}</view>
+        <view class="course-meta">{{item.teacher}} · {{item.durationMin}} 课时</view>
+        <view class="course-progress">
+          <view class="progress-bar">
+            <view class="progress-fill {{item.progressClass}}" style="width: {{item.progress}}%;"></view>
           </view>
-          <view wx:if="{{item.content}}" class="text-xs text-muted mb-half">{{item.content}}</view>
-          <view class="text-xs text-muted">日期 {{item.date}} · 创建 {{item.createdAtLabel}}</view>
+          <view class="progress-text">{{item.progress}}%</view>
         </view>
-        <view class="del-btn" data-id="{{item.id}}" bindtap="onDelete">🗑</view>
       </view>
     </view>
+
+    <!-- 推荐阅读区域 -->
+    <view class="section-title" style="margin-top: 16rpx;">
+      <text class="section-emoji">📰</text>
+      <text>推荐阅读</text>
+    </view>
+
+    <view class="card" style="padding: 0;">
+      <view wx:for="{{recommendList}}" wx:key="id" class="rec-item">
+        <view class="rec-icon {{item.iconBg}}">{{item.icon}}</view>
+        <view class="flex-1">
+          <view class="rec-title">{{item.title}}</view>
+          <view class="text-xs text-muted">{{item.source}} · {{item.readTime}} 分钟阅读</view>
+        </view>
+        <view class="text-muted">›</view>
+      </view>
+    </view>
+
   </view>
+
+  <!-- 悬浮 + 按钮 -->
+  <view class="fab" bindtap="onFabTap">+</view>
+
 </view>
 
 <view wx:if="{{toastShow}}" class="toast"><text>{{toastMsg}}</text></view>
