@@ -1,0 +1,22 @@
+{
+  "description": "个人工作台 - 吃药提醒 + 每日日记（Supabase 云同步）",
+  "miniprogramRoot": "./",
+  "compileType": "miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true,
+    "babelSetting": {
+      "ignore": [],
+      "disablePlugins": [],
+      "outputPath": ""
+    }
+  },
+  "appid": "touristappid",
+  "projectname": "workbench-miniprogram",
+  "libVersion": "2.32.0",
+  "condition": {}
+}

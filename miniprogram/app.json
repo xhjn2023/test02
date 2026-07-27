@@ -1,0 +1,15 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#fdfcf9",
+    "navigationBarTitleText": "个人工作台",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#f0fdf4"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

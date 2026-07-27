@@ -1,0 +1,86 @@
+/* 全局样式 - 薄荷清新主题（与 HTML 版一致） */
+page {
+  background: #f0fdf4;
+  color: #334155;
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 28rpx;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 通用工具类 */
+.container { padding: 24rpx 32rpx 160rpx; }
+
+.card {
+  background: #ffffff;
+  border-radius: 32rpx;
+  box-shadow: 0 8rpx 40rpx -16rpx rgba(16,122,87,0.12);
+  padding: 36rpx;
+  margin-bottom: 24rpx;
+}
+
+.card-sm {
+  background: #ffffff;
+  border-radius: 24rpx;
+  box-shadow: 0 4rpx 20rpx -8rpx rgba(0,0,0,0.06);
+  padding: 28rpx;
+  margin-bottom: 24rpx;
+}
+
+.text-mint { color: #15803d; }
+.text-mint-soft { color: #16a34a; }
+.text-muted { color: #94a3b8; }
+.text-xs { font-size: 22rpx; }
+.text-sm { font-size: 26rpx; }
+.text-lg { font-size: 34rpx; }
+.text-xl { font-size: 40rpx; }
+.text-2xl { font-size: 56rpx; font-weight: 700; }
+.font-bold { font-weight: 700; }
+.font-semibold { font-weight: 600; }
+
+.btn-primary {
+  background: linear-gradient(90deg, #4ade80, #22c55e);
+  color: #ffffff;
+  border-radius: 24rpx;
+  padding: 24rpx;
+  text-align: center;
+  font-weight: 600;
+  box-shadow: 0 8rpx 30rpx -12rpx rgba(16,122,87,0.3);
+}
+.btn-primary.btn-done {
+  background: linear-gradient(90deg, #cbd5e1, #94a3b8);
+  box-shadow: none;
+}
+.btn-ghost {
+  background: #f0fdf4;
+  color: #15803d;
+  border-radius: 20rpx;
+  padding: 20rpx;
+  text-align: center;
+  font-weight: 500;
+}
+
+.tag {
+  display: inline-block;
+  padding: 6rpx 16rpx;
+  border-radius: 100rpx;
+  font-size: 22rpx;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
+.row { display: flex; align-items: center; }
+.row-between { display: flex; align-items: center; justify-content: space-between; }
+.gap-2 { gap: 12rpx; }
+.gap-3 { gap: 18rpx; }
+.gap-5 { gap: 30rpx; }
+.flex-1 { flex: 1; }
+.hidden { display: none; }
+
+/* 输入控件 */
+.input-soft {
+  background: #f0fdf4;
+  border-radius: 16rpx;
+  padding: 12rpx 20rpx;
+  font-size: 26rpx;
+  color: #334155;
+}

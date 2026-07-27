@@ -1,0 +1,7 @@
+{
+  "usingComponents": {},
+  "navigationStyle": "default",
+  "navigationBarTitleText": "个人工作台",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark"
+}
