@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#a7f3d0" />
+<title>个人工作台 · 吃药提醒 + 日记</title>
+
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<!-- Font Awesome -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.2/css/all.min.css" />
+<!-- dayjs 处理日期 -->
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.11/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.11/locale/zh-cn.js"></script>
+
+<script>
+  // Tailwind 配置：与 A 方案保持一致的薄荷清新主题
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          mint: { 50:'#f0fdf4',100:'#dcfce7',200:'#bbf7d0',300:'#86efac',400:'#4ade80',500:'#22c55e',600:'#16a34a',700:'#15803d' },
+          cream: '#fdfcf9',
+          blush: '#fce7f3'
+        },
+        fontFamily: { sans: ['system-ui','-apple-system','PingFang SC','Microsoft YaHei','sans-serif'] },
+        boxShadow: {
+          soft: '0 8px 30px -12px rgba(16,122,87,0.18)',
+          card: '0 4px 20px -8px rgba(0,0,0,0.06)'
+        }
+      }
+    }
+  };
+</script>
+
+<style>
+  html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+  body { overscroll-behavior-y: none; }
+  @keyframes drawRing { from { stroke-dashoffset: 999; } }
+  .ring-anim { animation: drawRing 0.9s ease-out; }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .sheet-enter { animation: slideUp 0.28s cubic-bezier(0.22,1,0.36,1); }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .fade-enter { animation: fadeIn 0.2s ease-out; }
+  .pressable { transition: transform 0.12s ease, box-shadow 0.12s ease; }
+  .pressable:active { transform: scale(0.97); }
+  input:focus, select:focus, textarea:focus { outline: none; box-shadow: 0 0 0 4px rgba(34,197,94,0.15); }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  /* 日记内容换行 + 长内容折叠 */
+  .diary-content { white-space: pre-wrap; word-break: break-word; }
+  /* 模块切换 tab 下划线 */
+  .tab-active { color: #15803d; border-color: #22c55e; }
+  /* 滚动条隐藏（日记列表） */
+  .scroll-hide::-webkit-scrollbar { width: 4px; }
+  .scroll-hide::-webkit-scrollbar-thumb { background: #dcfce7; border-radius: 2px; }
+</style>
+</head>
+
+<body class="bg-mint-50 text-slate-700 font-sans min-h-screen antialiased">
+
+<!-- ============ 顶部标题栏 ============ -->
+<header class="sticky top-0 z-30 bg-cream/85 backdrop-blur-md border-b border-mint-100">
+  <div class="max-w-2xl mx-auto px-5 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-mint-300 to-mint-500 flex items-center justify-center shadow-soft">
+        <i class="fa-solid fa-layer-group text-white text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-semibold text-slate-800 leading-tight">个人工作台</h1>
+        <p class="text-xs text-slate-400" id="todayLabel">—</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button id="notifyToggle" class="pressable w-10 h-10 rounded-full bg-white shadow-card flex items-center justify-center text-slate-500" title="通知开关">
+        <i class="fa-regular fa-bell"></i>
+      </button>
+      <button id="exportBtn" class="pressable w-10 h-10 rounded-full bg-white shadow-card flex items-center justify-center text-slate-500" title="导出数据">
+        <i class="fa-solid fa-download"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- 模块切换 Tab -->
+  <div class="max-w-2xl mx-auto px-5 flex gap-6">
+    <button data-module="meds" class="moduleTab py-2 text-sm font-medium text-mint-700 border-b-2 border-mint-500">
+      <i class="fa-solid fa-prescription-bottle-medical mr-1.5"></i>吃药提醒
+    </button>
+    <button data-module="diary" class="moduleTab py-2 text-sm font-medium text-slate-400 border-b-2 border-transparent">
+      <i class="fa-solid fa-book mr-1.5"></i>每日日记
+    </button>
+  </div>
+</header>
+
+<main class="max-w-2xl mx-auto px-5 py-6 pb-28 space-y-5">
+
+  <!-- ============ 模块1：吃药提醒 ============ -->
+  <div id="moduleMeds" class="space-y-5">
+
+    <!-- 今日打卡主卡 -->
+    <section class="bg-white rounded-3xl shadow-card p-6 fade-enter">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <p class="text-xs text-mint-600 font-medium tracking-wide">今日服药</p>
+          <h2 class="text-xl font-semibold text-slate-800 mt-0.5" id="checkinTitle">还未打卡</h2>
+        </div>
+        <span id="streakBadge" class="text-xs px-3 py-1 rounded-full bg-mint-50 text-mint-700">
+          <i class="fa-solid fa-fire mr-1"></i>连续 <b id="streakNum">0</b> 天
+        </span>
+      </div>
+
+      <div class="flex items-center gap-5 my-5">
+        <div class="relative w-28 h-28 flex-shrink-0">
+          <svg viewBox="0 0 100 100" class="w-full h-full -rotate-90">
+            <circle cx="50" cy="50" r="42" fill="none" stroke="#dcfce7" stroke-width="9" />
+            <circle id="ringFg" cx="50" cy="50" r="42" fill="none" stroke="#22c55e" stroke-width="9"
+                    stroke-linecap="round" stroke-dasharray="263.89" stroke-dashoffset="263.89" class="ring-anim" />
+          </svg>
+          <div class="absolute inset-0 flex flex-col items-center justify-center">
+            <span class="text-2xl font-bold text-slate-800" id="ringPct">0%</span>
+            <span class="text-[10px] text-slate-400">剩余比例</span>
+          </div>
+        </div>
+        <div class="flex-1 space-y-2">
+          <div class="flex items-baseline gap-1">
+            <span class="text-3xl font-bold text-slate-800" id="remainPills">0</span>
+            <span class="text-sm text-slate-400">/ <span id="totalPills">30</span> 颗</span>
+          </div>
+          <p class="text-xs text-slate-500">第 <b class="text-mint-600" id="bottleNo">1</b> 瓶 · 预计 <span id="estFinish">—</span> 吃完</p>
+        </div>
+      </div>
+
+      <button id="checkinBtn" class="pressable w-full py-3.5 rounded-2xl bg-gradient-to-r from-mint-400 to-mint-500 text-white font-semibold shadow-soft flex items-center justify-center gap-2">
+        <i class="fa-solid fa-check-circle"></i>
+        <span id="checkinBtnText">完成今日打卡</span>
+      </button>
+    </section>
+
+    <!-- 低药量提醒 -->
+    <section id="lowAlert" class="hidden bg-blush border border-pink-200 rounded-2xl p-4 flex items-center gap-3 fade-enter">
+      <div class="w-9 h-9 rounded-full bg-pink-100 flex items-center justify-center flex-shrink-0">
+        <i class="fa-solid fa-triangle-exclamation text-pink-500"></i>
+      </div>
+      <div class="flex-1">
+        <p class="text-sm font-medium text-pink-700">药量不足提醒</p>
+        <p class="text-xs text-pink-500" id="lowAlertText">剩余药片较少，建议尽快购药。</p>
+      </div>
+      <button onclick="document.getElementById('lowAlert').classList.add('hidden')" class="text-pink-300 hover:text-pink-500"><i class="fa-solid fa-xmark"></i></button>
+    </section>
+
+    <!-- 快捷操作 -->
+    <section class="grid grid-cols-2 gap-3">
+      <button id="newBottleBtn" class="pressable bg-white rounded-2xl shadow-card p-4 flex flex-col items-center gap-2">
+        <div class="w-11 h-11 rounded-xl bg-mint-50 flex items-center justify-center"><i class="fa-solid fa-plus text-mint-500"></i></div>
+        <span class="text-sm font-medium text-slate-600">开新瓶</span>
+      </button>
+      <button id="editPillsBtn" class="pressable bg-white rounded-2xl shadow-card p-4 flex flex-col items-center gap-2">
+        <div class="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center"><i class="fa-solid fa-pen text-amber-500"></i></div>
+        <span class="text-sm font-medium text-slate-600">修改余量</span>
+      </button>
+    </section>
+
+    <!-- 设置卡 -->
+    <section class="bg-white rounded-3xl shadow-card p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-sliders text-mint-500"></i>提醒设置
+      </h3>
+      <div class="space-y-3">
+        <div class="flex items-center justify-between">
+          <label class="text-sm text-slate-600">每日提醒时间</label>
+          <input type="time" id="reminderTime" class="bg-mint-50 rounded-xl px-3 py-1.5 text-sm text-slate-700" />
+        </div>
+        <div class="flex items-center justify-between">
+          <label class="text-sm text-slate-600">每日服药颗数</label>
+          <input type="number" id="pillsPerDay" min="1" max="10" class="bg-mint-50 rounded-xl px-3 py-1.5 text-sm text-slate-700 w-16 text-center" />
+        </div>
+        <div class="flex items-center justify-between">
+          <label class="text-sm text-slate-600">低药量阈值（颗）</label>
+          <input type="number" id="lowThreshold" min="1" max="30" class="bg-mint-50 rounded-xl px-3 py-1.5 text-sm text-slate-700 w-16 text-center" />
+        </div>
+        <div class="flex items-center justify-between">
+          <label class="text-sm text-slate-600">开启每日通知</label>
+          <button id="notifySwitch" role="switch" aria-checked="false" class="relative w-12 h-7 rounded-full bg-slate-200 transition-colors">
+            <span class="absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow transition-transform"></span>
+          </button>
+        </div>
+      </div>
+      <button id="testNotifyBtn" class="mt-4 w-full py-2.5 rounded-xl bg-mint-50 text-mint-700 text-sm font-medium hover:bg-mint-100">
+        <i class="fa-regular fa-paper-plane mr-1"></i>测试通知
+      </button>
+    </section>
+
+    <!-- 历史记录 -->
+    <section class="bg-white rounded-3xl shadow-card p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
+          <i class="fa-solid fa-clock-rotate-left text-mint-500"></i>服药历史
+        </h3>
+        <div class="flex bg-mint-50 rounded-lg p-0.5 text-xs">
+          <button data-tab="checkins" class="tabBtn px-3 py-1 rounded-md font-medium bg-white text-mint-700 shadow-sm">打卡</button>
+          <button data-tab="bottles" class="tabBtn px-3 py-1 rounded-md font-medium text-slate-400">瓶次</button>
+        </div>
+      </div>
+      <div id="checkinHistory" class="space-y-2 max-h-64 overflow-y-auto scroll-hide"></div>
+      <div id="bottleHistory" class="hidden space-y-2 max-h-64 overflow-y-auto scroll-hide"></div>
+    </section>
+  </div>
+
+  <!-- ============ 模块2：每日日记 ============ -->
+  <div id="moduleDiary" class="hidden space-y-5">
+
+    <!-- 今日日记编辑卡 -->
+    <section class="bg-white rounded-3xl shadow-card p-6 fade-enter">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <p class="text-xs text-mint-600 font-medium tracking-wide">今日日记</p>
+          <h2 class="text-xl font-semibold text-slate-800 mt-0.5" id="diaryDateTitle">—</h2>
+        </div>
+        <span id="diaryWordCount" class="text-xs px-3 py-1 rounded-full bg-mint-50 text-mint-700">
+          <i class="fa-solid fa-feather mr-1"></i><b id="wcNum">0</b> 字
+        </span>
+      </div>
+
+      <!-- 心情选择 -->
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-xs text-slate-500 mr-1">心情</span>
+        <div id="moodPicker" class="flex gap-1.5"></div>
+      </div>
+
+      <!-- 标签 -->
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-xs text-slate-500 mr-1">标签</span>
+        <div id="tagPicker" class="flex gap-1.5 flex-wrap"></div>
+      </div>
+
+      <textarea id="diaryTextarea" rows="6" placeholder="今天发生了什么？记录此刻的想法..."
+        class="w-full bg-mint-50 rounded-2xl px-4 py-3 text-sm text-slate-700 resize-none diary-content"></textarea>
+
+      <div class="flex gap-3 mt-3">
+        <button id="diarySaveBtn" class="pressable flex-1 py-3 rounded-2xl bg-gradient-to-r from-mint-400 to-mint-500 text-white font-semibold shadow-soft flex items-center justify-center gap-2">
+          <i class="fa-solid fa-floppy-disk"></i><span id="diarySaveBtnText">保存日记</span>
+        </button>
+        <button id="diaryDeleteBtn" class="pressable hidden px-4 py-3 rounded-2xl bg-pink-50 text-pink-500 font-medium">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>
+    </section>
+
+    <!-- 统计卡 -->
+    <section class="grid grid-cols-3 gap-3">
+      <div class="bg-white rounded-2xl shadow-card p-4 text-center">
+        <p class="text-2xl font-bold text-mint-600" id="statTotal">0</p>
+        <p class="text-xs text-slate-400 mt-1">总日记</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-card p-4 text-center">
+        <p class="text-2xl font-bold text-amber-500" id="statWords">0</p>
+        <p class="text-xs text-slate-400 mt-1">总字数</p>
+      </div>
+      <div class="bg-white rounded-2xl shadow-card p-4 text-center">
+        <p class="text-2xl font-bold text-purple-500" id="statStreak">0</p>
+        <p class="text-xs text-slate-400 mt-1">连续天数</p>
+      </div>
+    </section>
+
+    <!-- 搜索 + 历史日记 -->
+    <section class="bg-white rounded-3xl shadow-card p-5">
+      <h3 class="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+        <i class="fa-solid fa-book-open text-mint-500"></i>历史日记
+      </h3>
+      <div class="relative mb-3">
+        <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 text-sm"></i>
+        <input id="diarySearch" type="text" placeholder="搜索日记内容或标签..."
+          class="w-full bg-mint-50 rounded-xl pl-9 pr-3 py-2 text-sm text-slate-700" />
+      </div>
+      <div id="diaryList" class="space-y-2 max-h-[28rem] overflow-y-auto scroll-hide"></div>
+    </section>
+  </div>
+
+</main>
+
+<!-- ============ 通用底部弹层：修改药量 ============ -->
+<div id="sheetOverlay" class="hidden fixed inset-0 z-40 bg-black/30 fade-enter">
+  <div id="sheetBox" class="absolute bottom-0 left-1/2 -translate-x-1/2 w-full max-w-xl bg-white rounded-t-3xl p-6 sheet-enter">
+    <div class="w-10 h-1 bg-slate-200 rounded-full mx-auto mb-4"></div>
+    <h3 class="text-lg font-semibold text-slate-800 mb-4" id="sheetTitle">修改剩余药量</h3>
+    <div class="space-y-4">
+      <div>
+        <label class="text-xs text-slate-500">当前瓶号</label>
+        <input type="number" id="sheetBottleNo" min="1" class="mt-1 w-full bg-mint-50 rounded-xl px-4 py-3 text-slate-700" />
+      </div>
+      <div>
+        <label class="text-xs text-slate-500">剩余药片数（颗）</label>
+        <input type="number" id="sheetPills" min="0" max="999" class="mt-1 w-full bg-mint-50 rounded-xl px-4 py-3 text-slate-700" />
+        <p id="sheetErr" class="text-xs text-red-400 mt-1 hidden"></p>
+      </div>
+      <div class="flex gap-3 pt-2">
+        <button id="sheetCancel" class="flex-1 py-3 rounded-2xl bg-slate-100 text-slate-600 font-medium">取消</button>
+        <button id="sheetSave" class="flex-1 py-3 rounded-2xl bg-mint-500 text-white font-semibold shadow-soft">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Toast ============ -->
+<div id="toast" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 hidden">
+  <div class="bg-slate-800 text-white text-sm px-4 py-2.5 rounded-full shadow-lg flex items-center gap-2">
+    <i id="toastIcon" class="fa-solid fa-circle-check text-mint-400"></i>
+    <span id="toastMsg">已保存</span>
+  </div>
+</div>
+
+<script>
+/* =====================================================================
+ * 个人工作台 —— 业务逻辑
+ * 模块：① 吃药提醒 ② 每日日记
+ * 数据持久化：localStorage key = "workbenchData"
+ * 依赖：dayjs(日期) / Tailwind(样式) / Font Awesome(图标) / 原生 JS
+ * ===================================================================== */
+dayjs.locale('zh-cn');
+
+const STORAGE_KEY = 'workbenchData';
+const DEFAULT_DATA = {
+  meds: {
+    bottles: [],
+    checkins: [],
+    settings: { reminderTime: '08:00', notificationEnabled: false, lowThreshold: 5, pillsPerDay: 1 }
+  },
+  diary: {
+    entries: []   // { id, date, content, mood, tags, createdAt, updatedAt }
+  }
+};
+
+/* ---------- 数据存取（带异常兜底，防 JSON 损坏丢数据） ---------- */
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(DEFAULT_DATA);
+    const p = JSON.parse(raw);
+    // 字段补全（兼容旧版）
+    if (!p.meds) p.meds = structuredClone(DEFAULT_DATA.meds);
+    if (!p.meds.bottles) p.meds.bottles = [];
+    if (!p.meds.checkins) p.meds.checkins = [];
+    if (!p.meds.settings) p.meds.settings = DEFAULT_DATA.meds.settings;
+    if (!p.diary) p.diary = { entries: [] };
+    if (!p.diary.entries) p.diary.entries = [];
+    return p;
+  } catch (e) {
+    console.warn('[工作台] 数据读取失败，使用默认', e);
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+function saveData() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); return true; }
+  catch (e) {
+    console.error('[工作台] 保存失败', e);
+    toast('保存失败：存储空间不足', 'error');
+    return false;
+  }
+}
+
+let state = loadData();
+
+/* ---------- 工具 ---------- */
+const $ = (id) => document.getElementById(id);
+const todayStr = () => dayjs().format('YYYY-MM-DD');
+const nowISO = () => dayjs().toISOString();
+const activeBottle = () => {
+  const bs = state.meds.bottles;
+  if (!bs.length) return null;
+  return bs.find(b => b.isActive) || bs[bs.length - 1];
+};
+function estFinishDate(b) {
+  if (!b) return '—';
+  const perDay = Math.max(1, state.meds.settings.pillsPerDay);
+  const days = Math.ceil(b.remainingPills / perDay);
+  if (days <= 0) return '今天';
+  return dayjs().add(days, 'day').format('M月D日');
+}
+function calcMedsStreak() {
+  const set = new Set(state.meds.checkins.filter(c => c.taken).map(c => c.date));
+  let s = 0, d = dayjs();
+  if (!set.has(d.format('YYYY-MM-DD'))) d = d.subtract(1, 'day');
+  while (set.has(d.format('YYYY-MM-DD'))) { s++; d = d.subtract(1, 'day'); }
+  return s;
+}
+
+/* ---------- Toast ---------- */
+let toastTimer = null;
+function toast(msg, type = 'success') {
+  const t = $('toast');
+  $('toastMsg').textContent = msg;
+  $('toastIcon').className = type === 'error'
+    ? 'fa-solid fa-circle-exclamation text-red-400'
+    : 'fa-solid fa-circle-check text-mint-400';
+  t.classList.remove('hidden');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.add('hidden'), 2200);
+}
+
+/* ---------- 通知 ---------- */
+async function ensureNotifyPermission() {
+  if (!('Notification' in window)) { toast('浏览器不支持通知', 'error'); return false; }
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission !== 'denied') {
+    return (await Notification.requestPermission()) === 'granted';
+  }
+  return false;
+}
+function sendNotify(title, body) {
+  if (!state.meds.settings.notificationEnabled) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification(title, { body, tag: 'workbench' }); } catch (e) { console.warn(e); }
+}
+
+/* =====================================================================
+ * 模块切换
+ * ===================================================================== */
+let currentModule = 'meds';
+document.querySelectorAll('.moduleTab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const m = btn.dataset.module;
+    currentModule = m;
+    document.querySelectorAll('.moduleTab').forEach(b => {
+      b.classList.remove('text-mint-700', 'border-mint-500');
+      b.classList.add('text-slate-400', 'border-transparent');
+    });
+    btn.classList.add('text-mint-700', 'border-mint-500');
+    btn.classList.remove('text-slate-400', 'border-transparent');
+    $('moduleMeds').classList.toggle('hidden', m !== 'meds');
+    $('moduleDiary').classList.toggle('hidden', m !== 'diary');
+    if (m === 'diary') renderDiary();
+  });
+});
+
+/* =====================================================================
+ * 模块1：吃药提醒（沿用 A 方案逻辑）
+ * ===================================================================== */
+function renderMeds() {
+  const b = activeBottle();
+  const today = todayStr();
+  const tc = state.meds.checkins.find(c => c.date === today);
+
+  $('todayLabel').textContent = dayjs().format('YYYY年M月D日 dddd');
+
+  if (tc && tc.taken) {
+    $('checkinTitle').textContent = '今日已完成 ✓';
+    $('checkinBtnText').textContent = '已打卡，再按一次取消';
+    $('checkinBtn').classList.remove('from-mint-400', 'to-mint-500');
+    $('checkinBtn').classList.add('from-slate-300', 'to-slate-400');
+  } else {
+    $('checkinTitle').textContent = '还未打卡';
+    $('checkinBtnText').textContent = '完成今日打卡';
+    $('checkinBtn').classList.add('from-mint-400', 'to-mint-500');
+    $('checkinBtn').classList.remove('from-slate-300', 'to-slate-400');
+  }
+
+  $('streakNum').textContent = calcMedsStreak();
+
+  if (b) {
+    const total = b.totalPills || 30;
+    const remain = Math.max(0, b.remainingPills);
+    const pct = total ? Math.round((remain / total) * 100) : 0;
+    $('remainPills').textContent = remain;
+    $('totalPills').textContent = total;
+    $('bottleNo').textContent = b.bottleNumber;
+    $('estFinish').textContent = estFinishDate(b);
+    $('ringPct').textContent = pct + '%';
+    $('ringFg').setAttribute('stroke-dashoffset', 263.89 * (1 - pct / 100));
+  } else {
+    $('remainPills').textContent = '0';
+    $('bottleNo').textContent = '—';
+    $('estFinish').textContent = '—';
+    $('ringPct').textContent = '0%';
+    $('ringFg').setAttribute('stroke-dashoffset', 263.89);
+  }
+
+  if (b && b.remainingPills <= state.meds.settings.lowThreshold) {
+    $('lowAlert').classList.remove('hidden');
+    $('lowAlertText').textContent = `当前剩余 ${b.remainingPills} 颗（第${b.bottleNumber}瓶），低于阈值 ${state.meds.settings.lowThreshold} 颗，建议尽快购药。`;
+  } else {
+    $('lowAlert').classList.add('hidden');
+  }
+
+  $('reminderTime').value = state.meds.settings.reminderTime;
+  $('pillsPerDay').value = state.meds.settings.pillsPerDay;
+  $('lowThreshold').value = state.meds.settings.lowThreshold;
+  updateNotifySwitch();
+  renderMedsHistory();
+}
+
+function renderMedsHistory() {
+  // 打卡
+  const cbox = $('checkinHistory');
+  const clist = [...state.meds.checkins].sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 60);
+  if (!clist.length) {
+    cbox.innerHTML = '<p class="text-center text-xs text-slate-400 py-6">暂无打卡记录</p>';
+  } else {
+    cbox.innerHTML = clist.map(c => {
+      const b = state.meds.bottles.find(x => x.id === c.bottleId);
+      const bn = b ? `第${b.bottleNumber}瓶` : '';
+      return `<div class="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-mint-50">
+        <div class="w-8 h-8 rounded-full ${c.taken ? 'bg-mint-100 text-mint-600' : 'bg-slate-100 text-slate-400'} flex items-center justify-center text-sm">
+          <i class="fa-solid ${c.taken ? 'fa-check' : 'fa-xmark'}"></i>
+        </div>
+        <div class="flex-1">
+          <p class="text-sm text-slate-700">${c.date}</p>
+          <p class="text-xs text-slate-400">${bn}${c.taken ? ' · 已服药' : ' · 未服药'}</p>
+        </div>
+        <span class="text-xs text-slate-300">${dayjs(c.timestamp).format('HH:mm')}</span>
+      </div>`;
+    }).join('');
+  }
+  // 瓶次
+  const bbox = $('bottleHistory');
+  const blist = [...state.meds.bottles].sort((a, b) => b.bottleNumber - a.bottleNumber);
+  if (!blist.length) {
+    bbox.innerHTML = '<p class="text-center text-xs text-slate-400 py-6">暂无瓶次记录</p>';
+  } else {
+    bbox.innerHTML = blist.map(b => {
+      const consumed = (b.totalPills || 30) - b.remainingPills;
+      const pct = Math.round((consumed / (b.totalPills || 30)) * 100);
+      const status = b.isActive ? '<span class="text-mint-600">使用中</span>' : '<span class="text-slate-400">已用完</span>';
+      return `<div class="py-2 px-2 rounded-lg hover:bg-mint-50">
+        <div class="flex items-center justify-between mb-1">
+          <p class="text-sm text-slate-700">第 ${b.bottleNumber} 瓶 ${status}</p>
+          <span class="text-xs text-slate-400">${b.remainingPills}/${b.totalPills}颗</span>
+        </div>
+        <div class="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+          <div class="h-full bg-mint-400 rounded-full" style="width:${pct}%"></div>
+        </div>
+        <p class="text-xs text-slate-400 mt-1">起用 ${dayjs(b.startDate).format('YYYY-MM-DD')} · 已服 ${consumed} 颗</p>
+      </div>`;
+    }).join('');
+  }
+}
+
+function updateNotifySwitch() {
+  const sw = $('notifySwitch');
+  const on = state.meds.settings.notificationEnabled;
+  sw.setAttribute('aria-checked', String(on));
+  sw.classList.toggle('bg-mint-500', on);
+  sw.classList.toggle('bg-slate-200', !on);
+  sw.querySelector('span').style.transform = on ? 'translateX(20px)' : 'translateX(0)';
+  $('notifyToggle').querySelector('i').className = on ? 'fa-solid fa-bell text-mint-600' : 'fa-regular fa-bell';
+}
+
+function toggleCheckin() {
+  const today = todayStr();
+  const b = activeBottle();
+  if (!b) { toast('请先开启第一瓶药', 'error'); openSheet('new'); return; }
+  let rec = state.meds.checkins.find(c => c.date === today);
+  if (rec && rec.taken) {
+    rec.taken = false; rec.timestamp = nowISO();
+    b.remainingPills = Math.min(b.totalPills, b.remainingPills + state.meds.settings.pillsPerDay);
+    toast('已取消今日打卡');
+  } else {
+    if (!rec) { rec = { date: today, bottleId: b.id, taken: false, timestamp: nowISO() }; state.meds.checkins.push(rec); }
+    rec.taken = true; rec.bottleId = b.id; rec.timestamp = nowISO();
+    b.remainingPills = Math.max(0, b.remainingPills - state.meds.settings.pillsPerDay);
+    toast('打卡成功，记得按时吃药');
+    sendNotify('吃药打卡成功 ✓', `今日已服药 ${state.meds.settings.pillsPerDay} 颗，剩余 ${b.remainingPills} 颗`);
+  }
+  saveData(); renderMeds(); checkReminder();
+}
+function newBottle() {
+  const last = state.meds.bottles[state.meds.bottles.length - 1];
+  const nextNo = last ? last.bottleNumber + 1 : 1;
+  state.meds.bottles.forEach(b => b.isActive = false);
+  state.meds.bottles.push({
+    id: Date.now(), bottleNumber: nextNo, totalPills: 30, remainingPills: 30,
+    startDate: todayStr(), isActive: true, createdAt: nowISO()
+  });
+  saveData();
+  toast(`已开启第 ${nextNo} 瓶，药量重置为 30 颗`);
+  renderMeds(); checkReminder();
+}
+function savePills() {
+  const b = activeBottle();
+  const no = parseInt($('sheetBottleNo').value, 10);
+  const pills = parseInt($('sheetPills').value, 10);
+  const err = $('sheetErr');
+  if (isNaN(no) || no < 1) { err.textContent = '瓶号不能小于 1'; err.classList.remove('hidden'); return; }
+  if (isNaN(pills) || pills < 0) { err.textContent = '剩余药片数不能为负数'; err.classList.remove('hidden'); return; }
+  if (pills > 999) { err.textContent = '药片数超出合理范围'; err.classList.remove('hidden'); return; }
+  if (!b) {
+    state.meds.bottles.forEach(x => x.isActive = false);
+    state.meds.bottles.push({ id: Date.now(), bottleNumber: no, totalPills: 30, remainingPills: pills, startDate: todayStr(), isActive: true, createdAt: nowISO() });
+  } else {
+    b.bottleNumber = no; b.remainingPills = pills;
+    if (pills > b.totalPills) b.totalPills = pills;
+  }
+  saveData(); closeSheet();
+  toast('已保存修改'); renderMeds(); checkReminder();
+}
+function openSheet(mode) {
+  const b = activeBottle();
+  $('sheetOverlay').classList.remove('hidden');
+  if (mode === 'new' && b) {
+    $('sheetTitle').textContent = '开新瓶';
+    $('sheetBottleNo').value = b.bottleNumber + 1; $('sheetPills').value = 30;
+  } else if (mode === 'new') {
+    $('sheetTitle').textContent = '开启第一瓶药';
+    $('sheetBottleNo').value = 1; $('sheetPills').value = 30;
+  } else {
+    $('sheetTitle').textContent = '修改余量';
+    $('sheetBottleNo').value = b ? b.bottleNumber : 1; $('sheetPills').value = b ? b.remainingPills : 30;
+  }
+  $('sheetErr').classList.add('hidden');
+}
+function closeSheet() { $('sheetOverlay').classList.add('hidden'); }
+
+function checkReminder() {
+  const b = activeBottle();
+  if (b && b.remainingPills <= state.meds.settings.lowThreshold && b.remainingPills > 0) {
+    sendNotify('药量不足提醒', `第${b.bottleNumber}瓶仅剩 ${b.remainingPills} 颗`);
+  }
+  if (b && b.remainingPills === 0) {
+    sendNotify('药已吃完', `第${b.bottleNumber}瓶已吃完，请开启新瓶`);
+  }
+}
+let lastNotifyDate = '';
+function tickReminder() {
+  const now = dayjs();
+  const today = now.format('YYYY-MM-DD');
+  if (now.format('HH:mm') === state.meds.settings.reminderTime && lastNotifyDate !== today) {
+    lastNotifyDate = today;
+    const tc = state.meds.checkins.find(c => c.date === today && c.taken);
+    if (!tc) sendNotify('该吃药啦 💊', `${now.format('M月D日')}，记得按时服药`);
+  }
+}
+
+// 药模块事件
+$('checkinBtn').addEventListener('click', toggleCheckin);
+$('newBottleBtn').addEventListener('click', () => openSheet('new'));
+$('editPillsBtn').addEventListener('click', () => openSheet('edit'));
+$('sheetCancel').addEventListener('click', closeSheet);
+$('sheetSave').addEventListener('click', savePills);
+$('sheetOverlay').addEventListener('click', (e) => { if (e.target === $('sheetOverlay')) closeSheet(); });
+$('reminderTime').addEventListener('change', (e) => { state.meds.settings.reminderTime = e.target.value; saveData(); toast('提醒时间已更新'); });
+$('pillsPerDay').addEventListener('change', (e) => {
+  const v = parseInt(e.target.value, 10);
+  if (isNaN(v) || v < 1) { e.target.value = state.meds.settings.pillsPerDay; toast('每日颗数不能小于1', 'error'); return; }
+  state.meds.settings.pillsPerDay = v; saveData(); renderMeds();
+});
+$('lowThreshold').addEventListener('change', (e) => {
+  const v = parseInt(e.target.value, 10);
+  if (isNaN(v) || v < 1) { e.target.value = state.meds.settings.lowThreshold; toast('阈值不能小于1', 'error'); return; }
+  state.meds.settings.lowThreshold = v; saveData(); renderMeds();
+});
+$('notifySwitch').addEventListener('click', async () => {
+  const willOn = !state.meds.settings.notificationEnabled;
+  if (willOn) {
+    const ok = await ensureNotifyPermission();
+    if (!ok) { toast('未获得通知权限', 'error'); return; }
+  }
+  state.meds.settings.notificationEnabled = willOn;
+  saveData(); updateNotifySwitch();
+  toast(willOn ? '已开启每日通知' : '已关闭通知');
+  if (willOn) sendNotify('通知已开启', `每日 ${state.meds.settings.reminderTime} 提醒你吃药`);
+});
+$('notifyToggle').addEventListener('click', () => $('notifySwitch').click());
+$('testNotifyBtn').addEventListener('click', async () => {
+  const ok = await ensureNotifyPermission();
+  if (!ok) { toast('未获得通知权限', 'error'); return; }
+  try { new Notification('测试通知 💊', { body: '通知功能正常工作' }); } catch (e) { toast('通知发送失败', 'error'); }
+});
+document.querySelectorAll('.tabBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tabBtn').forEach(b => {
+      b.classList.remove('bg-white', 'text-mint-700', 'shadow-sm');
+      b.classList.add('text-slate-400');
+    });
+    btn.classList.add('bg-white', 'text-mint-700', 'shadow-sm');
+    btn.classList.remove('text-slate-400');
+    $('checkinHistory').classList.toggle('hidden', tab !== 'checkins');
+    $('bottleHistory').classList.toggle('hidden', tab !== 'bottles');
+  });
+});
+
+/* =====================================================================
+ * 模块2：每日日记
+ * ===================================================================== */
+const MOODS = [
+  { key: 'great',  icon: '😀', label: '开心', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' },
+  { key: 'good',   icon: '🙂', label: '不错', color: 'bg-mint-100 text-mint-700 border-mint-300' },
+  { key: 'ok',     icon: '😐', label: '一般', color: 'bg-slate-100 text-slate-600 border-slate-300' },
+  { key: 'bad',    icon: '😕', label: '不好', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+  { key: 'sad',    icon: '😢', label: '难过', color: 'bg-purple-100 text-purple-700 border-purple-300' }
+];
+const PRESET_TAGS = ['工作', '生活', '健康', '学习', '家庭', '旅行', '想法'];
+let editingDiaryDate = null;   // 当前正在编辑的日记日期
+let currentMood = 'good';
+let currentTags = new Set();
+
+function renderMoodPicker() {
+  $('moodPicker').innerHTML = MOODS.map(m => `
+    <button data-mood="${m.key}" class="moodBtn px-2.5 py-1 rounded-full border text-xs ${m.color} ${m.key === currentMood ? 'ring-2 ring-offset-1 ring-mint-400' : ''} opacity-60 hover:opacity-100 transition">
+      ${m.icon} ${m.label}
+    </button>`).join('');
+  document.querySelectorAll('.moodBtn').forEach(b => {
+    b.addEventListener('click', () => { currentMood = b.dataset.mood; renderMoodPicker(); });
+  });
+}
+function renderTagPicker() {
+  $('tagPicker').innerHTML = PRESET_TAGS.map(t => {
+    const on = currentTags.has(t);
+    return `<button data-tag="${t}" class="tagBtn px-2.5 py-1 rounded-full border text-xs ${on ? 'bg-mint-500 text-white border-mint-500' : 'bg-white text-slate-500 border-slate-200'} hover:border-mint-400 transition">#${t}</button>`;
+  }).join('');
+  document.querySelectorAll('.tagBtn').forEach(b => {
+    b.addEventListener('click', () => {
+      const t = b.dataset.tag;
+      if (currentTags.has(t)) currentTags.delete(t); else currentTags.add(t);
+      renderTagPicker();
+    });
+  });
+}
+
+function loadTodayDiary() {
+  const today = todayStr();
+  const e = state.diary.entries.find(x => x.date === today);
+  editingDiaryDate = today;
+  if (e) {
+    $('diaryTextarea').value = e.content || '';
+    currentMood = e.mood || 'good';
+    currentTags = new Set(e.tags || []);
+    $('diarySaveBtnText').textContent = '更新日记';
+    $('diaryDeleteBtn').classList.remove('hidden');
+  } else {
+    $('diaryTextarea').value = '';
+    currentMood = 'good';
+    currentTags = new Set();
+    $('diarySaveBtnText').textContent = '保存日记';
+    $('diaryDeleteBtn').classList.add('hidden');
+  }
+  $('diaryDateTitle').textContent = dayjs().format('M月D日 dddd');
+  updateWordCount();
+  renderMoodPicker();
+  renderTagPicker();
+}
+
+function updateWordCount() {
+  const n = $('diaryTextarea').value.length;
+  $('wcNum').textContent = n;
+}
+$('diaryTextarea').addEventListener('input', updateWordCount);
+
+function saveDiary() {
+  const content = $('diaryTextarea').value.trim();
+  if (!content) { toast('日记内容不能为空', 'error'); return; }
+  const today = editingDiaryDate || todayStr();
+  let e = state.diary.entries.find(x => x.date === today);
+  if (e) {
+    e.content = content;
+    e.mood = currentMood;
+    e.tags = [...currentTags];
+    e.updatedAt = nowISO();
+  } else {
+    e = {
+      id: Date.now(),
+      date: today,
+      content,
+      mood: currentMood,
+      tags: [...currentTags],
+      createdAt: nowISO(),
+      updatedAt: nowISO()
+    };
+    state.diary.entries.push(e);
+  }
+  saveData();
+  toast('日记已保存');
+  renderDiary();
+}
+function deleteDiary() {
+  if (!editingDiaryDate) return;
+  if (!confirm('确认删除今日日记？此操作不可恢复。')) return;
+  state.diary.entries = state.diary.entries.filter(x => x.date !== editingDiaryDate);
+  saveData();
+  toast('日记已删除');
+  loadTodayDiary();
+  renderDiary();
+}
+$('diarySaveBtn').addEventListener('click', saveDiary);
+$('diaryDeleteBtn').addEventListener('click', deleteDiary);
+
+function renderDiary() {
+  // 今日编辑区
+  loadTodayDiary();
+  // 统计
+  const entries = state.diary.entries;
+  $('statTotal').textContent = entries.length;
+  $('statWords').textContent = entries.reduce((s, e) => s + (e.content?.length || 0), 0);
+  // 连续写日记天数
+  const set = new Set(entries.map(e => e.date));
+  let s = 0, d = dayjs();
+  if (!set.has(d.format('YYYY-MM-DD'))) d = d.subtract(1, 'day');
+  while (set.has(d.format('YYYY-MM-DD'))) { s++; d = d.subtract(1, 'day'); }
+  $('statStreak').textContent = s;
+  // 历史列表（带搜索）
+  renderDiaryList();
+}
+
+function renderDiaryList() {
+  const kw = $('diarySearch').value.trim().toLowerCase();
+  let list = [...state.diary.entries].sort((a, b) => a.date < b.date ? 1 : -1);
+  if (kw) {
+    list = list.filter(e =>
+      (e.content || '').toLowerCase().includes(kw) ||
+      (e.tags || []).some(t => t.toLowerCase().includes(kw))
+    );
+  }
+  list = list.slice(0, 100);  // 限制渲染数量，避免大量数据卡顿
+  const box = $('diaryList');
+  if (!list.length) {
+    box.innerHTML = '<p class="text-center text-xs text-slate-400 py-6">' + (kw ? '未找到匹配的日记' : '暂无日记，开始记录今天吧') + '</p>';
+    return;
+  }
+  const moodMap = Object.fromEntries(MOODS.map(m => [m.key, m]));
+  box.innerHTML = list.map(e => {
+    const m = moodMap[e.mood] || moodMap.good;
+    const tags = (e.tags || []).map(t => `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">#${t}</span>`).join('');
+    // 长内容折叠
+    const preview = e.content.length > 120 ? e.content.slice(0, 120) + '...' : e.content;
+    return `<div data-date="${e.date}" class="diaryItem py-3 px-3 rounded-xl hover:bg-mint-50 cursor-pointer border border-transparent hover:border-mint-100">
+      <div class="flex items-center justify-between mb-1">
+        <div class="flex items-center gap-2">
+          <span class="text-base">${m.icon}</span>
+          <span class="text-sm font-medium text-slate-700">${dayjs(e.date).format('M月D日 dddd')}</span>
+        </div>
+        <span class="text-xs text-slate-400">${e.content.length}字</span>
+      </div>
+      <p class="text-xs text-slate-600 diary-content mt-1">${escapeHtml(preview)}</p>
+      ${tags ? '<div class="mt-1.5 flex gap-1 flex-wrap">' + tags + '</div>' : ''}
+    </div>`;
+  }).join('');
+  // 点击历史日记 → 加载到编辑区
+  document.querySelectorAll('.diaryItem').forEach(item => {
+    item.addEventListener('click', () => {
+      const d = item.dataset.date;
+      const e = state.diary.entries.find(x => x.date === d);
+      if (!e) return;
+      editingDiaryDate = e.date;
+      $('diaryTextarea').value = e.content;
+      currentMood = e.mood;
+      currentTags = new Set(e.tags);
+      $('diaryDateTitle').textContent = dayjs(e.date).format('M月D日 dddd');
+      $('diarySaveBtnText').textContent = '更新日记';
+      $('diaryDeleteBtn').classList.remove('hidden');
+      updateWordCount();
+      renderMoodPicker();
+      renderTagPicker();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+$('diarySearch').addEventListener('input', renderDiaryList);
+
+/* =====================================================================
+ * 导出数据（备份用）
+ * ===================================================================== */
+$('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `workbench-backup-${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('数据已导出');
+});
+
+/* =====================================================================
+ * 键盘
+ * ===================================================================== */
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSheet();
+  // Ctrl/Cmd + S 保存日记
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    if (currentModule === 'diary') { e.preventDefault(); saveDiary(); }
+  }
+});
+
+/* =====================================================================
+ * 初始化
+ * ===================================================================== */
+// 首次使用自动建第一瓶药
+if (!state.meds.bottles.length) {
+  state.meds.bottles.push({
+    id: Date.now(), bottleNumber: 1, totalPills: 30, remainingPills: 30,
+    startDate: todayStr(), isActive: true, createdAt: nowISO()
+  });
+  saveData();
+}
+renderMeds();
+renderDiary();
+setInterval(tickReminder, 30000);
+tickReminder();
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { renderMeds(); if (currentModule === 'diary') renderDiary(); }
+});
+</script>
+</body>
+</html>
