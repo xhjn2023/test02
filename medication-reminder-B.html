@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#020617" />
+<title>MEDS // 服药控制系统（硬核版）</title>
+
+<!-- Tailwind CSS v3 -->
+<script src="https://cdn.tailwindcss.com/3.4.16"></script>
+<!-- Font Awesome -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.2/css/all.min.css" />
+<!-- dayjs -->
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.11/dayjs.min.js"></script>
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<script>
+  // Tailwind 暗色硬核主题
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        colors: {
+          neon: { cyan: '#22d3ee', green: '#4ade80', purple: '#a78bfa', amber: '#fbbf24', red: '#f87171' },
+          panel: { 900: '#0b1120', 800: '#111827', 700: '#1e293b', 600: '#334155' }
+        },
+        fontFamily: {
+          mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+          sans: ['system-ui', '-apple-system', 'sans-serif']
+        }
+      }
+    }
+  };
+</script>
+
+<style>
+  body { background: #020617; background-image:
+      radial-gradient(circle at 15% 10%, rgba(34, 211, 238, 0.08), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(167, 139, 250, 0.08), transparent 40%);
+  }
+  /* 终端扫描线效果 */
+  .scanline::before {
+    content: ''; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent 0, transparent 3px, rgba(34,211,238,0.025) 3px, rgba(34,211,238,0.025) 4px);
+  }
+  /* 进度条流光 */
+  @keyframes flow { 0% { background-position: 0 0; } 100% { background-position: 200% 0; } }
+  .bar-flow { background-size: 200% 100%; animation: flow 2.5s linear infinite; }
+  /* 闪烁指示灯 */
+  @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+  /* KPI 卡 hover 描边 */
+  .kpi { transition: border-color 0.15s, transform 0.15s; }
+  .kpi:hover { border-color: #22d3ee; transform: translateY(-2px); }
+  /* 输入框暗色 */
+  input, select { color-scheme: dark; }
+  input:focus, select:focus { outline: none; border-color: #22d3ee; box-shadow: 0 0 0 1px #22d3ee; }
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; }
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  /* 表格行 hover */
+  .row-hover:hover { background: rgba(34, 211, 238, 0.05); }
+  /* 命令面板淡入 */
+  @keyframes cmdIn { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: none; } }
+  .cmd-in { animation: cmdIn 0.18s ease-out; }
+</style>
+</head>
+
+<body class="text-slate-200 font-sans min-h-screen antialiased">
+
+<!-- ============ 顶栏 ============ -->
+<header class="sticky top-0 z-30 border-b border-slate-800 bg-panel-900/90 backdrop-blur">
+  <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-slate-800 border border-neon-cyan/40 flex items-center justify-center relative scanline overflow-hidden">
+        <i class="fa-solid fa-capsules text-neon-cyan text-sm"></i>
+      </div>
+      <div>
+        <h1 class="font-mono text-sm font-bold text-neon-cyan tracking-widest">MEDS//CTRL</h1>
+        <p class="font-mono text-[10px] text-slate-500" id="sysClock">--:--:--</p>
+      </div>
+    </div>
+
+    <!-- 状态指示灯 -->
+    <div class="hidden sm:flex items-center gap-4 font-mono text-[11px]">
+      <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-neon-green pulse-dot"></span><span class="text-slate-400">SYS</span><span class="text-neon-green">ONLINE</span></span>
+      <span class="flex items-center gap-1.5"><span id="notifyDot" class="w-2 h-2 rounded-full bg-slate-600"></span><span class="text-slate-400">NOTIFY</span><span id="notifyState" class="text-slate-500">OFF</span></span>
+    </div>
+
+    <button id="cmdBtn" class="font-mono text-xs px-3 py-1.5 rounded-md border border-slate-700 hover:border-neon-cyan hover:text-neon-cyan transition-colors flex items-center gap-2">
+      <i class="fa-solid fa-terminal"></i><span class="hidden sm:inline">命令面板</span><kbd class="hidden md:inline text-[10px] px-1 py-0.5 bg-slate-800 rounded">⌘K</kbd>
+    </button>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-5">
+
+  <!-- ============ KPI 顶栏 ============ -->
+  <section class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <!-- 当前瓶号 -->
+    <div class="kpi bg-panel-800 border border-slate-700 rounded-xl p-4 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-mono text-[10px] text-slate-500 tracking-wider">BOTTLE_NO</span>
+        <i class="fa-solid fa-prescription-bottle text-slate-600 text-xs"></i>
+      </div>
+      <div class="flex items-baseline gap-1">
+        <span class="text-slate-400 text-sm">#</span>
+        <span class="font-mono text-3xl font-bold text-white" id="kpiBottleNo">1</span>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-1">当前瓶序号</p>
+    </div>
+    <!-- 剩余药量 -->
+    <div class="kpi bg-panel-800 border border-slate-700 rounded-xl p-4 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-mono text-[10px] text-slate-500 tracking-wider">REMAINING</span>
+        <i class="fa-solid fa-pills text-slate-600 text-xs"></i>
+      </div>
+      <div class="flex items-baseline gap-1">
+        <span class="font-mono text-3xl font-bold text-neon-cyan" id="kpiRemain">30</span>
+        <span class="text-xs text-slate-500">/<span id="kpiTotal">30</span></span>
+      </div>
+      <div class="mt-2 w-full h-1 bg-slate-700 rounded-full overflow-hidden">
+        <div id="kpiRemainBar" class="h-full bg-gradient-to-r from-neon-cyan to-neon-green bar-flow" style="width:100%; background-image: linear-gradient(90deg,#22d3ee,#4ade80,#22d3ee);"></div>
+      </div>
+    </div>
+    <!-- 预计吃完 -->
+    <div class="kpi bg-panel-800 border border-slate-700 rounded-xl p-4 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-mono text-[10px] text-slate-500 tracking-wider">ETA_FINISH</span>
+        <i class="fa-solid fa-hourglass-half text-slate-600 text-xs"></i>
+      </div>
+      <div class="font-mono text-2xl font-bold text-neon-amber" id="kpiEta">—</div>
+      <p class="text-[11px] text-slate-500 mt-1" id="kpiEtaDays">预计剩余天数 —</p>
+    </div>
+    <!-- 依从率 -->
+    <div class="kpi bg-panel-800 border border-slate-700 rounded-xl p-4 relative overflow-hidden">
+      <div class="flex items-center justify-between mb-2">
+        <span class="font-mono text-[10px] text-slate-500 tracking-wider">ADHERENCE</span>
+        <i class="fa-solid fa-chart-line text-slate-600 text-xs"></i>
+      </div>
+      <div class="flex items-baseline gap-1">
+        <span class="font-mono text-3xl font-bold text-neon-green" id="kpiAdh">0</span>
+        <span class="text-xs text-slate-500">%</span>
+      </div>
+      <p class="text-[11px] text-slate-500 mt-1">近 30 天打卡率</p>
+    </div>
+  </section>
+
+  <!-- ============ 今日打卡 + 大进度条 ============ -->
+  <section class="bg-panel-800 border border-slate-700 rounded-xl p-5">
+    <div class="flex flex-col md:flex-row md:items-center gap-5">
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <span id="todayDot" class="w-2.5 h-2.5 rounded-full bg-slate-600"></span>
+          <span class="font-mono text-xs text-slate-400" id="todayLabel">—</span>
+        </div>
+        <h2 class="text-lg font-semibold text-white" id="checkinTitle">今日状态：待打卡</h2>
+        <p class="text-xs text-slate-500 mt-1 font-mono">连续打卡 <span class="text-neon-green" id="streakNum">0</span> 天 · 累计打卡 <span class="text-slate-300" id="totalCheckins">0</span> 次</p>
+      </div>
+      <button id="checkinBtn" class="pressable px-6 py-3 rounded-lg font-mono text-sm font-bold border transition-colors flex items-center gap-2">
+        <i class="fa-solid fa-check"></i><span id="checkinBtnText">CHECK-IN</span>
+      </button>
+    </div>
+
+    <!-- 当前瓶消耗进度条 -->
+    <div class="mt-5">
+      <div class="flex items-center justify-between mb-2 font-mono text-[11px]">
+        <span class="text-slate-400">BOTTLE_CONSUMPTION</span>
+        <span class="text-slate-500"><span id="consumedNum">0</span> consumed · <span id="remainNum">30</span> remaining</span>
+      </div>
+      <div class="w-full h-3 bg-slate-900 rounded-sm overflow-hidden border border-slate-700 relative">
+        <div id="consumeBar" class="h-full bar-flow transition-all duration-500" style="width:0%; background-image: linear-gradient(90deg,#22d3ee,#a78bfa,#22d3ee);"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 警报区 ============ -->
+  <section id="alertZone" class="hidden bg-red-950/40 border border-red-700/50 rounded-xl p-4 flex items-center gap-3">
+    <div class="w-9 h-9 rounded-lg bg-red-900/50 flex items-center justify-center flex-shrink-0">
+      <i class="fa-solid fa-triangle-exclamation text-neon-red"></i>
+    </div>
+    <div class="flex-1">
+      <p class="font-mono text-sm font-bold text-red-300">ALERT // LOW_SUPPLY</p>
+      <p class="text-xs text-red-400/80 font-mono" id="alertText">—</p>
+    </div>
+    <button onclick="document.getElementById('alertZone').classList.add('hidden')" class="text-red-400 hover:text-red-200"><i class="fa-solid fa-xmark"></i></button>
+  </section>
+
+  <!-- ============ 图表区 ============ -->
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <!-- 打卡趋势折线 -->
+    <div class="lg:col-span-2 bg-panel-800 border border-slate-700 rounded-xl p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-mono text-sm font-bold text-slate-200"><i class="fa-solid fa-wave-square text-neon-cyan mr-2"></i>CHECKIN_TREND</h3>
+        <span class="font-mono text-[10px] text-slate-500">最近 14 天</span>
+      </div>
+      <div class="h-56"><canvas id="trendChart"></canvas></div>
+    </div>
+    <!-- 瓶次消耗条形 -->
+    <div class="bg-panel-800 border border-slate-700 rounded-xl p-5">
+      <h3 class="font-mono text-sm font-bold text-slate-200 mb-3"><i class="fa-solid fa-chart-column text-neon-purple mr-2"></i>BOTTLE_USAGE</h3>
+      <div class="h-56"><canvas id="bottleChart"></canvas></div>
+    </div>
+  </section>
+
+  <!-- ============ 操作 + 设置 ============ -->
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+    <!-- 快捷操作 -->
+    <div class="bg-panel-800 border border-slate-700 rounded-xl p-5">
+      <h3 class="font-mono text-sm font-bold text-slate-200 mb-3"><i class="fa-solid fa-bolt text-neon-amber mr-2"></i>ACTIONS</h3>
+      <div class="space-y-2">
+        <button id="newBottleBtn" class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-neon-cyan hover:text-neon-cyan font-mono text-xs text-left flex items-center justify-between transition-colors">
+          <span><i class="fa-solid fa-plus mr-2"></i>NEW_BOTTLE</span><span class="text-slate-600">→</span>
+        </button>
+        <button id="editPillsBtn" class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-neon-amber hover:text-neon-amber font-mono text-xs text-left flex items-center justify-between transition-colors">
+          <span><i class="fa-solid fa-pen mr-2"></i>EDIT_REMAINING</span><span class="text-slate-600">→</span>
+        </button>
+        <button id="testNotifyBtn" class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-neon-purple hover:text-neon-purple font-mono text-xs text-left flex items-center justify-between transition-colors">
+          <span><i class="fa-solid fa-bell mr-2"></i>TEST_NOTIFY</span><span class="text-slate-600">→</span>
+        </button>
+        <button id="clearDataBtn" class="w-full px-4 py-2.5 rounded-lg bg-slate-900 border border-slate-700 hover:border-neon-red hover:text-neon-red font-mono text-xs text-left flex items-center justify-between transition-colors">
+          <span><i class="fa-solid fa-trash mr-2"></i>CLEAR_DATA</span><span class="text-slate-600">→</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 设置 -->
+    <div class="lg:col-span-2 bg-panel-800 border border-slate-700 rounded-xl p-5">
+      <h3 class="font-mono text-sm font-bold text-slate-200 mb-3"><i class="fa-solid fa-sliders text-neon-green mr-2"></i>CONFIG</h3>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <label class="block font-mono text-[10px] text-slate-500 mb-1">REMINDER_TIME</label>
+          <input type="time" id="reminderTime" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono" />
+        </div>
+        <div>
+          <label class="block font-mono text-[10px] text-slate-500 mb-1">PILLS_PER_DAY</label>
+          <input type="number" id="pillsPerDay" min="1" max="10" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono" />
+        </div>
+        <div>
+          <label class="block font-mono text-[10px] text-slate-500 mb-1">LOW_THRESHOLD</label>
+          <input type="number" id="lowThreshold" min="1" max="30" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono" />
+        </div>
+        <div>
+          <label class="block font-mono text-[10px] text-slate-500 mb-1">NOTIFY</label>
+          <button id="notifySwitch" class="w-full px-3 py-2 rounded-lg border font-mono text-sm transition-colors">OFF</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 数据表 ============ -->
+  <section class="bg-panel-800 border border-slate-700 rounded-xl overflow-hidden">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-700">
+      <h3 class="font-mono text-sm font-bold text-slate-200"><i class="fa-solid fa-database text-neon-cyan mr-2"></i>LOG_TABLE</h3>
+      <div class="flex bg-slate-900 rounded-md p-0.5 font-mono text-[11px]">
+        <button data-tab="checkins" class="tabBtn px-3 py-1 rounded bg-slate-700 text-neon-cyan">CHECKINS</button>
+        <button data-tab="bottles" class="tabBtn px-3 py-1 rounded text-slate-500">BOTTLES</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left font-mono text-xs">
+        <thead class="bg-slate-900/50 text-slate-500 text-[10px] tracking-wider">
+          <tr id="theadRow"></tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============ 命令面板 ============ -->
+<div id="cmdOverlay" class="hidden fixed inset-0 z-40 bg-black/60 flex items-start justify-center pt-24">
+  <div class="w-full max-w-lg bg-panel-800 border border-slate-700 rounded-xl shadow-2xl cmd-in overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-700 flex items-center gap-3">
+      <i class="fa-solid fa-terminal text-neon-cyan"></i>
+      <input id="cmdInput" type="text" placeholder="输入命令: checkin / newbottle / edit / notify / clear / help" class="flex-1 bg-transparent text-sm font-mono text-slate-200 placeholder-slate-600" />
+      <kbd class="text-[10px] px-1.5 py-0.5 bg-slate-900 rounded text-slate-500">ESC</kbd>
+    </div>
+    <div id="cmdHint" class="px-4 py-3 text-xs text-slate-500 font-mono"></div>
+  </div>
+</div>
+
+<!-- ============ 编辑弹层 ============ -->
+<div id="sheetOverlay" class="hidden fixed inset-0 z-40 bg-black/60 flex items-center justify-center">
+  <div class="w-full max-w-sm bg-panel-800 border border-slate-700 rounded-xl p-5 cmd-in mx-4">
+    <h3 class="font-mono text-sm font-bold text-neon-cyan mb-4" id="sheetTitle">EDIT_REMAINING</h3>
+    <div class="space-y-3">
+      <div>
+        <label class="block font-mono text-[10px] text-slate-500 mb-1">BOTTLE_NO (≥1)</label>
+        <input type="number" id="sheetBottleNo" min="1" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono" />
+      </div>
+      <div>
+        <label class="block font-mono text-[10px] text-slate-500 mb-1">REMAINING_PILLS (≥0)</label>
+        <input type="number" id="sheetPills" min="0" max="999" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono" />
+        <p id="sheetErr" class="text-[11px] text-neon-red mt-1 hidden font-mono"></p>
+      </div>
+      <div class="flex gap-2 pt-2">
+        <button id="sheetCancel" class="flex-1 py-2 rounded-lg bg-slate-900 border border-slate-700 text-slate-400 font-mono text-xs">CANCEL</button>
+        <button id="sheetSave" class="flex-1 py-2 rounded-lg bg-neon-cyan/10 border border-neon-cyan text-neon-cyan font-mono text-xs font-bold">SAVE</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Toast / 通知卡 ============ -->
+<div id="toastStack" class="fixed bottom-4 right-4 z-50 space-y-2 max-w-xs"></div>
+
+<script>
+/* =====================================================================
+ * MEDS//CTRL · 硬核版 —— 业务逻辑
+ * 数据持久化：localStorage key = "medReminderDataB"
+ * 与方案 A 使用独立 key，互不干扰；纯原生 JS + Chart.js
+ * ===================================================================== */
+dayjs.locale('zh-cn');
+
+const STORAGE_KEY = 'medReminderDataB';
+const DEFAULT_DATA = {
+  bottles: [],
+  checkins: [],
+  settings: { reminderTime: '08:00', notificationEnabled: false, lowThreshold: 5, pillsPerDay: 1 }
+};
+
+/* ---------- 数据存取 ---------- */
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(DEFAULT_DATA);
+    const parsed = JSON.parse(raw);
+    if (!parsed.bottles) parsed.bottles = [];
+    if (!parsed.checkins) parsed.checkins = [];
+    if (!parsed.settings) parsed.settings = DEFAULT_DATA.settings;
+    return parsed;
+  } catch (e) {
+    console.warn('[MEDS] 数据读取失败，重置', e);
+    return structuredClone(DEFAULT_DATA);
+  }
+}
+function saveData(data) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
+  } catch (e) {
+    console.error('[MEDS] 保存失败', e);
+    notifyToast('保存失败：存储空间不足', 'error');
+    return false;
+  }
+}
+
+let state = loadData();
+let trendChart = null, bottleChart = null;
+
+/* ---------- 工具 ---------- */
+const $ = (id) => document.getElementById(id);
+const todayStr = () => dayjs().format('YYYY-MM-DD');
+const nowISO = () => dayjs().toISOString();
+const activeBottle = () => {
+  if (!state.bottles.length) return null;
+  return state.bottles.find(b => b.isActive) || state.bottles[state.bottles.length - 1];
+};
+function estFinishDate(b) {
+  if (!b) return { text: '—', days: 0 };
+  const perDay = Math.max(1, state.settings.pillsPerDay);
+  const days = Math.ceil(b.remainingPills / perDay);
+  if (days <= 0) return { text: '今天', days: 0 };
+  return { text: dayjs().add(days, 'day').format('MM-DD'), days };
+}
+function calcStreak() {
+  const set = new Set(state.checkins.filter(c => c.taken).map(c => c.date));
+  let s = 0, d = dayjs();
+  if (!set.has(d.format('YYYY-MM-DD'))) d = d.subtract(1, 'day');
+  while (set.has(d.format('YYYY-MM-DD'))) { s++; d = d.subtract(1, 'day'); }
+  return s;
+}
+function calcAdherence() {
+  // 近 30 天打卡率
+  const set = new Set(state.checkins.filter(c => c.taken).map(c => c.date));
+  let total = 0, hit = 0;
+  for (let i = 0; i < 30; i++) {
+    const d = dayjs().subtract(i, 'day').format('YYYY-MM-DD');
+    total++;
+    if (set.has(d)) hit++;
+  }
+  return total ? Math.round((hit / total) * 100) : 0;
+}
+
+/* ---------- 通知（页面内 Toast + 浏览器原生） ---------- */
+function notifyToast(msg, type = 'info') {
+  const stack = $('toastStack');
+  const colors = {
+    info: 'border-neon-cyan text-neon-cyan',
+    success: 'border-neon-green text-neon-green',
+    warn: 'border-neon-amber text-neon-amber',
+    error: 'border-neon-red text-neon-red'
+  };
+  const icons = { info: 'fa-circle-info', success: 'fa-circle-check', warn: 'fa-triangle-exclamation', error: 'fa-circle-xmark' };
+  const el = document.createElement('div');
+  el.className = `bg-panel-800 border ${colors[type]} rounded-lg px-3 py-2 text-xs font-mono flex items-center gap-2 shadow-xl`;
+  el.innerHTML = `<i class="fa-solid ${icons[type]}"></i><span class="text-slate-200">${msg}</span>`;
+  stack.appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity 0.3s, transform 0.3s'; el.style.opacity = '0'; el.style.transform = 'translateX(20px)'; setTimeout(() => el.remove(), 300); }, 2600);
+}
+async function ensureNotifyPermission() {
+  if (!('Notification' in window)) { notifyToast('浏览器不支持通知', 'error'); return false; }
+  if (Notification.permission === 'granted') return true;
+  if (Notification.permission !== 'denied') {
+    const r = await Notification.requestPermission();
+    return r === 'granted';
+  }
+  return false;
+}
+function sendNotify(title, body) {
+  if (!state.settings.notificationEnabled) return;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  try { new Notification(title, { body, tag: 'meds-ctrl' }); }
+  catch (e) { console.warn(e); }
+}
+
+/* ---------- 渲染 ---------- */
+function render() {
+  const b = activeBottle();
+  const today = todayStr();
+  const tc = state.checkins.find(c => c.date === today);
+
+  // 时钟 + 日期
+  $('todayLabel').textContent = dayjs().format('YYYY-MM-DD HH:mm') + ' | ' + dayjs().format('dddd');
+
+  // 打卡状态
+  const btn = $('checkinBtn');
+  if (tc && tc.taken) {
+    $('checkinTitle').textContent = '今日状态：已完成 ✓';
+    $('checkinBtnText').textContent = 'UNDO';
+    btn.className = 'pressable px-6 py-3 rounded-lg font-mono text-sm font-bold border border-slate-600 text-slate-400 hover:border-neon-amber hover:text-neon-amber transition-colors flex items-center gap-2';
+    $('todayDot').className = 'w-2.5 h-2.5 rounded-full bg-neon-green pulse-dot';
+  } else {
+    $('checkinTitle').textContent = '今日状态：待打卡';
+    $('checkinBtnText').textContent = 'CHECK-IN';
+    btn.className = 'pressable px-6 py-3 rounded-lg font-mono text-sm font-bold border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10 transition-colors flex items-center gap-2';
+    $('todayDot').className = 'w-2.5 h-2.5 rounded-full bg-neon-amber pulse-dot';
+  }
+
+  $('streakNum').textContent = calcStreak();
+  $('totalCheckins').textContent = state.checkins.filter(c => c.taken).length;
+
+  // KPI
+  if (b) {
+    const total = b.totalPills || 30;
+    const remain = Math.max(0, b.remainingPills);
+    const pct = total ? Math.round((remain / total) * 100) : 0;
+    $('kpiBottleNo').textContent = b.bottleNumber;
+    $('kpiRemain').textContent = remain;
+    $('kpiTotal').textContent = total;
+    $('kpiRemainBar').style.width = pct + '%';
+    const eta = estFinishDate(b);
+    $('kpiEta').textContent = eta.text;
+    $('kpiEtaDays').textContent = `预计剩余 ${eta.days} 天`;
+    // 大进度条（消耗）
+    const consumed = total - remain;
+    $('consumedNum').textContent = consumed;
+    $('remainNum').textContent = remain;
+    $('consumeBar').style.width = (total ? Math.round((consumed / total) * 100) : 0) + '%';
+  } else {
+    $('kpiBottleNo').textContent = '—';
+    $('kpiRemain').textContent = '0';
+    $('consumeBar').style.width = '0%';
+  }
+  $('kpiAdh').textContent = calcAdherence();
+
+  // 警报
+  if (b && b.remainingPills <= state.settings.lowThreshold) {
+    $('alertZone').classList.remove('hidden');
+    $('alertText').textContent = `BOTTLE #${b.bottleNumber} 剩余 ${b.remainingPills} 颗 ≤ 阈值 ${state.settings.lowThreshold}，请尽快补货`;
+  } else {
+    $('alertZone').classList.add('hidden');
+  }
+
+  // 设置回填
+  $('reminderTime').value = state.settings.reminderTime;
+  $('pillsPerDay').value = state.settings.pillsPerDay;
+  $('lowThreshold').value = state.settings.lowThreshold;
+  updateNotifySwitch();
+
+  // 表格
+  renderTable();
+  // 图表
+  renderCharts();
+}
+
+function renderTable() {
+  const tab = currentTab;
+  const thead = $('theadRow');
+  const tbody = $('tbody');
+  if (tab === 'checkins') {
+    thead.innerHTML = `<th class="px-4 py-2">DATE</th><th class="px-4 py-2">TIME</th><th class="px-4 py-2">BOTTLE</th><th class="px-4 py-2">STATUS</th>`;
+    const list = [...state.checkins].sort((a, b) => a.date < b.date ? 1 : -1).slice(0, 100);
+    if (!list.length) { tbody.innerHTML = '<tr><td colspan="4" class="px-4 py-6 text-center text-slate-600">NO_DATA</td></tr>'; return; }
+    tbody.innerHTML = list.map(c => {
+      const b = state.bottles.find(x => x.id === c.bottleId);
+      const st = c.taken
+        ? '<span class="text-neon-green">● TAKEN</span>'
+        : '<span class="text-slate-500">○ SKIPPED</span>';
+      return `<tr class="row-hover border-t border-slate-800">
+        <td class="px-4 py-2 text-slate-300">${c.date}</td>
+        <td class="px-4 py-2 text-slate-500">${dayjs(c.timestamp).format('HH:mm:ss')}</td>
+        <td class="px-4 py-2 text-slate-400">#${b ? b.bottleNumber : '-'}</td>
+        <td class="px-4 py-2">${st}</td>
+      </tr>`;
+    }).join('');
+  } else {
+    thead.innerHTML = `<th class="px-4 py-2">NO</th><th class="px-4 py-2">START</th><th class="px-4 py-2">CONSUMED</th><th class="px-4 py-2">REMAIN</th><th class="px-4 py-2">STATUS</th>`;
+    const list = [...state.bottles].sort((a, b) => b.bottleNumber - a.bottleNumber);
+    if (!list.length) { tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-6 text-center text-slate-600">NO_DATA</td></tr>'; return; }
+    tbody.innerHTML = list.map(b => {
+      const consumed = (b.totalPills || 30) - b.remainingPills;
+      const st = b.isActive ? '<span class="text-neon-cyan">● ACTIVE</span>' : '<span class="text-slate-500">○ CLOSED</span>';
+      return `<tr class="row-hover border-t border-slate-800">
+        <td class="px-4 py-2 text-slate-300">#${b.bottleNumber}</td>
+        <td class="px-4 py-2 text-slate-500">${dayjs(b.startDate).format('YYYY-MM-DD')}</td>
+        <td class="px-4 py-2 text-neon-amber">${consumed}</td>
+        <td class="px-4 py-2 text-neon-cyan">${b.remainingPills}</td>
+        <td class="px-4 py-2">${st}</td>
+      </tr>`;
+    }).join('');
+  }
+}
+
+/* ---------- Chart.js 图表 ---------- */
+function renderCharts() {
+  // 趋势：最近 14 天打卡情况
+  const labels = [], data = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = dayjs().subtract(i, 'day');
+    labels.push(d.format('MM-DD'));
+    const taken = state.checkins.some(c => c.date === d.format('YYYY-MM-DD') && c.taken);
+    data.push(taken ? 1 : 0);
+  }
+  const ctx1 = $('trendChart').getContext('2d');
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(ctx1, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: '打卡',
+        data,
+        borderColor: '#22d3ee',
+        backgroundColor: (ctx) => {
+          const c = ctx.chart.ctx; const g = c.createLinearGradient(0, 0, 0, 200);
+          g.addColorStop(0, 'rgba(34,211,238,0.4)'); g.addColorStop(1, 'rgba(34,211,238,0)');
+          return g;
+        },
+        fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#22d3ee',
+        pointBorderColor: '#020617', borderWidth: 2, stepped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => c.raw ? '已打卡' : '未打卡' } } },
+      scales: {
+        x: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { family: 'monospace', size: 10 } } },
+        y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { family: 'monospace', size: 10 }, stepSize: 1, max: 1, min: 0, callback: (v) => v ? 'TAKEN' : 'SKIP' } }
+      }
+    }
+  });
+
+  // 瓶次消耗条形
+  const blabels = state.bottles.map(b => '#' + b.bottleNumber);
+  const bdata = state.bottles.map(b => (b.totalPills || 30) - b.remainingPills);
+  const ctx2 = $('bottleChart').getContext('2d');
+  if (bottleChart) bottleChart.destroy();
+  bottleChart = new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels: blabels.length ? blabels : ['#1'],
+      datasets: [{
+        label: '已消耗',
+        data: bdata.length ? bdata : [0],
+        backgroundColor: (ctx) => {
+          const c = ctx.chart.ctx; const g = c.createLinearGradient(0, 0, 0, 200);
+          g.addColorStop(0, '#a78bfa'); g.addColorStop(1, '#22d3ee');
+          return g;
+        },
+        borderRadius: 4, borderSkipped: false
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: '#64748b', font: { family: 'monospace', size: 10 } } },
+        y: { grid: { color: '#1e293b' }, ticks: { color: '#64748b', font: { family: 'monospace', size: 10 } }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function updateNotifySwitch() {
+  const sw = $('notifySwitch');
+  const on = state.settings.notificationEnabled;
+  sw.textContent = on ? 'ON' : 'OFF';
+  sw.className = on
+    ? 'w-full px-3 py-2 rounded-lg border border-neon-green text-neon-green bg-neon-green/10 font-mono text-sm transition-colors'
+    : 'w-full px-3 py-2 rounded-lg border border-slate-700 text-slate-500 font-mono text-sm transition-colors hover:border-slate-500';
+  $('notifyDot').className = on ? 'w-2 h-2 rounded-full bg-neon-green pulse-dot' : 'w-2 h-2 rounded-full bg-slate-600';
+  $('notifyState').textContent = on ? 'ON' : 'OFF';
+  $('notifyState').className = on ? 'text-neon-green' : 'text-slate-500';
+}
+
+/* ---------- 业务操作 ---------- */
+function toggleCheckin() {
+  const today = todayStr();
+  const b = activeBottle();
+  if (!b) { notifyToast('请先创建第一瓶药', 'warn'); openSheet('new'); return; }
+  let rec = state.checkins.find(c => c.date === today);
+  if (rec && rec.taken) {
+    rec.taken = false; rec.timestamp = nowISO();
+    b.remainingPills = Math.min(b.totalPills, b.remainingPills + state.settings.pillsPerDay);
+    notifyToast('已撤销今日打卡', 'warn');
+  } else {
+    if (!rec) { rec = { date: today, bottleId: b.id, taken: false, timestamp: nowISO() }; state.checkins.push(rec); }
+    rec.taken = true; rec.bottleId = b.id; rec.timestamp = nowISO();
+    b.remainingPills = Math.max(0, b.remainingPills - state.settings.pillsPerDay);
+    notifyToast('打卡成功 ✓', 'success');
+    sendNotify('MEDS//CTRL', `打卡成功，剩余 ${b.remainingPills} 颗`);
+  }
+  saveData(state); render(); checkReminder();
+}
+function newBottle() {
+  const last = state.bottles[state.bottles.length - 1];
+  const nextNo = last ? last.bottleNumber + 1 : 1;
+  state.bottles.forEach(b => b.isActive = false);
+  state.bottles.push({
+    id: Date.now(), bottleNumber: nextNo, totalPills: 30, remainingPills: 30,
+    startDate: todayStr(), isActive: true, createdAt: nowISO()
+  });
+  saveData(state);
+  notifyToast(`已开启第 ${nextNo} 瓶`, 'success');
+  render(); checkReminder();
+}
+function savePills() {
+  const b = activeBottle();
+  const no = parseInt($('sheetBottleNo').value, 10);
+  const pills = parseInt($('sheetPills').value, 10);
+  const err = $('sheetErr');
+  if (isNaN(no) || no < 1) { err.textContent = 'ERROR: 瓶号不能小于 1'; err.classList.remove('hidden'); return; }
+  if (isNaN(pills) || pills < 0) { err.textContent = 'ERROR: 药片数不能为负数'; err.classList.remove('hidden'); return; }
+  if (pills > 999) { err.textContent = 'ERROR: 药片数超出范围'; err.classList.remove('hidden'); return; }
+  if (!b) {
+    state.bottles.forEach(x => x.isActive = false);
+    state.bottles.push({ id: Date.now(), bottleNumber: no, totalPills: 30, remainingPills: pills, startDate: todayStr(), isActive: true, createdAt: nowISO() });
+  } else {
+    b.bottleNumber = no; b.remainingPills = pills;
+    if (pills > b.totalPills) b.totalPills = pills;
+  }
+  saveData(state); closeSheet();
+  notifyToast('数据已保存', 'success');
+  render(); checkReminder();
+}
+function clearData() {
+  if (!confirm('确认清空全部数据？此操作不可恢复。')) return;
+  state = structuredClone(DEFAULT_DATA);
+  saveData(state);
+  initFirstBottle();
+  render();
+  notifyToast('数据已清空', 'warn');
+}
+
+/* ---------- 弹层 ---------- */
+function openSheet(mode) {
+  const b = activeBottle();
+  $('sheetOverlay').classList.remove('hidden');
+  if (mode === 'new' && b) {
+    $('sheetTitle').textContent = 'NEW_BOTTLE';
+    $('sheetBottleNo').value = b.bottleNumber + 1; $('sheetPills').value = 30;
+  } else if (mode === 'new') {
+    $('sheetTitle').textContent = 'INIT_BOTTLE';
+    $('sheetBottleNo').value = 1; $('sheetPills').value = 30;
+  } else {
+    $('sheetTitle').textContent = 'EDIT_REMAINING';
+    $('sheetBottleNo').value = b ? b.bottleNumber : 1; $('sheetPills').value = b ? b.remainingPills : 30;
+  }
+  $('sheetErr').classList.add('hidden');
+}
+function closeSheet() { $('sheetOverlay').classList.add('hidden'); }
+
+/* ---------- 命令面板 ---------- */
+function openCmd() {
+  $('cmdOverlay').classList.remove('hidden');
+  $('cmdInput').value = '';
+  $('cmdInput').focus();
+  $('cmdHint').innerHTML = `可用命令: <span class="text-neon-cyan">checkin</span> · <span class="text-neon-cyan">newbottle</span> · <span class="text-neon-cyan">edit</span> · <span class="text-neon-cyan">notify on/off</span> · <span class="text-neon-cyan">clear</span> · <span class="text-neon-cyan">help</span>`;
+}
+function closeCmd() { $('cmdOverlay').classList.add('hidden'); }
+function runCmd(input) {
+  const cmd = input.trim().toLowerCase();
+  if (!cmd) return;
+  if (cmd === 'checkin') { toggleCheckin(); closeCmd(); }
+  else if (cmd === 'newbottle' || cmd === 'new') { newBottle(); closeCmd(); }
+  else if (cmd === 'edit') { openSheet('edit'); }
+  else if (cmd === 'notify on') { state.settings.notificationEnabled = true; saveData(state); updateNotifySwitch(); notifyToast('通知已开启', 'success'); closeCmd(); }
+  else if (cmd === 'notify off') { state.settings.notificationEnabled = false; saveData(state); updateNotifySwitch(); notifyToast('通知已关闭', 'warn'); closeCmd(); }
+  else if (cmd === 'clear') { closeCmd(); clearData(); }
+  else if (cmd === 'help') {
+    $('cmdHint').innerHTML = `<span class="text-slate-400">命令列表:</span><br>
+      <span class="text-neon-cyan">checkin</span> — 打卡/撤销<br>
+      <span class="text-neon-cyan">newbottle</span> — 开新瓶<br>
+      <span class="text-neon-cyan">edit</span> — 修改余量<br>
+      <span class="text-neon-cyan">notify on/off</span> — 通知开关<br>
+      <span class="text-neon-cyan">clear</span> — 清空数据`;
+  } else {
+    $('cmdHint').innerHTML = `<span class="text-neon-red">未知命令: ${cmd}</span>，输入 help 查看`;
+  }
+}
+
+/* ---------- 提醒检查 ---------- */
+function checkReminder() {
+  const b = activeBottle();
+  if (b && b.remainingPills <= state.settings.lowThreshold && b.remainingPills > 0) {
+    sendNotify('ALERT // LOW_SUPPLY', `第${b.bottleNumber}瓶仅剩 ${b.remainingPills} 颗`);
+  }
+  if (b && b.remainingPills === 0) {
+    sendNotify('ALERT // EMPTY', `第${b.bottleNumber}瓶已吃完，请开新瓶`);
+  }
+}
+let lastNotifyDate = '';
+function tickReminder() {
+  const now = dayjs();
+  const today = now.format('YYYY-MM-DD');
+  if (now.format('HH:mm') === state.settings.reminderTime && lastNotifyDate !== today) {
+    lastNotifyDate = today;
+    const tc = state.checkins.find(c => c.date === today && c.taken);
+    if (!tc) sendNotify('MEDS//CTRL', `${now.format('HH:mm')} 该吃药了`);
+  }
+}
+
+/* ---------- Tab ---------- */
+let currentTab = 'checkins';
+
+/* ---------- 事件绑定 ---------- */
+$('checkinBtn').addEventListener('click', toggleCheckin);
+$('newBottleBtn').addEventListener('click', () => openSheet('new'));
+$('editPillsBtn').addEventListener('click', () => openSheet('edit'));
+$('sheetCancel').addEventListener('click', closeSheet);
+$('sheetSave').addEventListener('click', savePills);
+$('sheetOverlay').addEventListener('click', (e) => { if (e.target === $('sheetOverlay')) closeSheet(); });
+$('clearDataBtn').addEventListener('click', clearData);
+$('testNotifyBtn').addEventListener('click', async () => {
+  const ok = await ensureNotifyPermission();
+  if (!ok) { notifyToast('未获得通知权限', 'error'); return; }
+  try { new Notification('MEDS//CTRL', { body: '通知功能正常' }); notifyToast('测试通知已发送', 'info'); }
+  catch (e) { notifyToast('通知发送失败', 'error'); }
+});
+
+$('reminderTime').addEventListener('change', (e) => { state.settings.reminderTime = e.target.value; saveData(state); notifyToast('提醒时间已更新', 'info'); });
+$('pillsPerDay').addEventListener('change', (e) => {
+  const v = parseInt(e.target.value, 10);
+  if (isNaN(v) || v < 1) { e.target.value = state.settings.pillsPerDay; notifyToast('每日颗数不能小于1', 'error'); return; }
+  state.settings.pillsPerDay = v; saveData(state); render();
+});
+$('lowThreshold').addEventListener('change', (e) => {
+  const v = parseInt(e.target.value, 10);
+  if (isNaN(v) || v < 1) { e.target.value = state.settings.lowThreshold; notifyToast('阈值不能小于1', 'error'); return; }
+  state.settings.lowThreshold = v; saveData(state); render();
+});
+$('notifySwitch').addEventListener('click', async () => {
+  const willOn = !state.settings.notificationEnabled;
+  if (willOn) {
+    const ok = await ensureNotifyPermission();
+    if (!ok) { notifyToast('未获得通知权限', 'error'); return; }
+  }
+  state.settings.notificationEnabled = willOn; saveData(state); updateNotifySwitch();
+  notifyToast(willOn ? '通知已开启' : '通知已关闭', willOn ? 'success' : 'warn');
+  if (willOn) sendNotify('MEDS//CTRL', `通知开启，每日 ${state.settings.reminderTime} 提醒`);
+});
+
+document.querySelectorAll('.tabBtn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentTab = btn.dataset.tab;
+    document.querySelectorAll('.tabBtn').forEach(b => {
+      b.classList.remove('bg-slate-700', 'text-neon-cyan');
+      b.classList.add('text-slate-500');
+    });
+    btn.classList.add('bg-slate-700', 'text-neon-cyan');
+    btn.classList.remove('text-slate-500');
+    renderTable();
+  });
+});
+
+// 命令面板
+$('cmdBtn').addEventListener('click', openCmd);
+$('cmdOverlay').addEventListener('click', (e) => { if (e.target === $('cmdOverlay')) closeCmd(); });
+$('cmdInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') runCmd(e.target.value);
+  if (e.key === 'Escape') closeCmd();
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openCmd(); }
+  if (e.key === 'Escape') { closeCmd(); closeSheet(); }
+});
+
+// 系统时钟
+function tickClock() { $('sysClock').textContent = dayjs().format('HH:mm:ss'); }
+
+/* ---------- 初始化 ---------- */
+function initFirstBottle() {
+  if (!state.bottles.length) {
+    state.bottles.push({
+      id: Date.now(), bottleNumber: 1, totalPills: 30, remainingPills: 30,
+      startDate: todayStr(), isActive: true, createdAt: nowISO()
+    });
+    saveData(state);
+  }
+}
+initFirstBottle();
+render();
+tickClock();
+setInterval(tickClock, 1000);
+setInterval(tickReminder, 30000);
+tickReminder();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+</script>
+</body>
+</html>
