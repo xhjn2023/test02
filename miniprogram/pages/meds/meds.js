@@ -31,6 +31,7 @@ Page({
   _app: null,
   _unsubSync: null,
   _ringCanvasReady: false,
+  _destroyed: false,
 
   onLoad() {
     this._app = getApp();
@@ -57,6 +58,7 @@ Page({
   },
 
   onUnload() {
+    this._destroyed = true;
     if (this._unsubSync) this._unsubSync();
   },
 
@@ -70,7 +72,7 @@ Page({
 
   _ensureFirstBottle(todayStr) {
     const app = this._app;
-    if (!app || !app.globalData) return;
+    if (!app || !app.globalData || this._destroyed) return;
     const state = app.getState();
     if (state.meds.bottles.length) return;
     if (!app.globalData.ready) {

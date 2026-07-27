@@ -14,6 +14,7 @@ Component({
     switchTab(e) {
       const index = e.currentTarget.dataset.index;
       const url = this.data.list[index].pagePath;
+      this.setData({ selected: index });
       wx.switchTab({ url });
     },
     setSelected(index) {

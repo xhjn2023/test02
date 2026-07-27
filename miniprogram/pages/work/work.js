@@ -30,6 +30,9 @@ Page({
   },
 
   onShow() {
+    if (typeof this.getTabBar === 'function' && this.getTabBar()) {
+      this.getTabBar().setSelected(1);
+    }
     if (this._app) this.refreshView();
   },
 
