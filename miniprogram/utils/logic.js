@@ -137,11 +137,20 @@ function _genId() {
   _idCounter = _idCounter + 1;
   return _idCounter;
 }
+// 基于已有记录的最大 id 校准 _idCounter，避免重启后 id 冲突导致 upsert 插入重复行
+function _bumpIdCounter(existingIds) {
+  for (let i = 0; i < existingIds.length; i++) {
+    const n = Number(existingIds[i]);
+    if (!isNaN(n) && n >= _idCounter) _idCounter = n;
+  }
+}
 function newBottle(state, todayStr, opts) {
   opts = opts || {};
   const s = clone(state);
   const last = s.meds.bottles[s.meds.bottles.length - 1];
   const nextNo = last ? (Number(last.bottleNumber) || 0) + 1 : 1;
+  // 用已有 bottle 的最大 id 校准计数器，确保新 id 大于所有现有 id
+  _bumpIdCounter(s.meds.bottles.map(b => b.id));
   s.meds.bottles.forEach(b => { b.isActive = false; });
   const totalPills = Math.max(0, Number(opts.totalPills) || 30);
   const remainingPills = Math.max(0, Number(opts.remainingPills != null ? opts.remainingPills : totalPills));
@@ -225,6 +234,8 @@ function saveDiary(state, dateStr, content, mood, tags) {
     e.tags = Array.isArray(tags) ? tags.slice() : [];
     e.updatedAt = now;
   } else {
+    // 用已有日记的最大 id 校准计数器，避免重启后 id 冲突
+    _bumpIdCounter(s.diary.entries.map(x => x.id));
     e = {
       id: _genId(),
       date: dateStr,

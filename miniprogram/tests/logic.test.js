@@ -123,6 +123,48 @@ section('4. 频繁切换新药瓶（连开 50 瓶）');
 }
 
 /* =========================================================== */
+section('4b. 重启后新瓶 id 不与已有 id 冲突（回归 bug）');
+{
+  // 模拟从云端拉取下来的已有 bottle：id 较大（如 Date.now() 量级）
+  const existing = logic.clone(logic.DEFAULT_DATA);
+  existing.meds.bottles.push({
+    id: 1785162961773,    // 模拟云端已有最大 id
+    bottleNumber: 1,
+    totalPills: 30,
+    remainingPills: 29,
+    startDate: '2026-07-27',
+    isActive: true,
+    createdAt: '2026-07-27T00:00:00Z'
+  });
+  // 此时本地 _idCounter 可能小于已有 id，新开瓶不应该产生重复或更小的 id
+  const r = logic.newBottle(existing, '2026-07-28', { totalPills: 30 });
+  const newB = r.state.meds.bottles[r.state.meds.bottles.length - 1];
+  assert(newB.id > 1785162961773, '新瓶 id > 已有最大 id');
+  const idSet = new Set(r.state.meds.bottles.map(b => b.id));
+  assert(idSet.size === r.state.meds.bottles.length, '新瓶 id 不与已有 id 重复');
+}
+
+/* =========================================================== */
+section('4c. 重启后新日记 id 不与已有 id 冲突（回归 bug）');
+{
+  const existing = logic.clone(logic.DEFAULT_DATA);
+  existing.diary.entries.push({
+    id: 1785162961774,    // 模拟云端已有最大 id
+    date: '2026-07-27',
+    content: '云端日记',
+    mood: 'good',
+    tags: [],
+    createdAt: '2026-07-27T00:00:00Z',
+    updatedAt: '2026-07-27T00:00:00Z'
+  });
+  const r = logic.saveDiary(existing, '2026-07-28', '本地新日记', 'good', []);
+  const newE = r.state.diary.entries.find(e => e.date === '2026-07-28');
+  assert(newE && newE.id > 1785162961774, '新日记 id > 已有最大 id');
+  const idSet = new Set(r.state.diary.entries.map(e => e.id));
+  assert(idSet.size === r.state.diary.entries.length, '新日记 id 不与已有 id 重复');
+}
+
+/* =========================================================== */
 section('5. 连续 60 天每日打卡 + 取消 + 再打卡');
 {
   let s = makeState();
